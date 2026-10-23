@@ -120,6 +120,13 @@ const zhTW = {
   'cmdk.action.importLedger': '匯入帳本資料',
 
   // 帳本匯入
+  'import.baishi.title': '百事AA帳單遷移',
+  'import.baishi.description': '上傳百事AA匯出的 Excel，核對後匯入蜜蜂記帳。',
+  'import.baishi.source': '來源帳本：{name}',
+  'import.baishi.images': '{count} 張圖片',
+  'import.baishi.scope': '支援單人人民幣收支及二級分類；需明確選擇目標帳本，不支援的內容會阻止匯入。',
+  'import.baishi.newLedger': '建立新帳本',
+  'import.baishi.newName': '新帳本名稱',
   'import.pageTitle': '匯入帳本資料',
   'import.uploading': '正在解析…',
   'import.drop.title': '拖曳檔案到這裡 / 點擊選擇',

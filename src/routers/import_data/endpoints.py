@@ -30,8 +30,11 @@ from ...routers.write._shared import (
     _payload_with_actor,
     get_accessible_ledger_by_external_id,
 )
+from ...services.compatibility.baishi_aa import source_id, validate_target
 from ...services.import_data import (
     ImportError as ImpError,
+)
+from ...services.import_data import (
     ImportFieldMapping,
     apply_mapping,
     cancel_token,
@@ -40,7 +43,13 @@ from ...services.import_data import (
     parse_csv_text,
     parse_excel_bytes,
 )
-from ...services.import_data.cache import save_token_data, update_token
+from ...services.import_data.cache import (
+    claim_execution,
+    release_execution,
+    save_token_data,
+    update_token,
+)
+from ...services.import_data.execution_support import stage_attachments, stage_ledger
 from ...services.import_data.stats import build_existing_sets, compute_stats
 from ...snapshot_mutator import (
     create_account,
@@ -123,6 +132,7 @@ def _mapping_to_payload(m: ImportFieldMapping) -> dict:
 
 
 class PreviewRequest(BaseModel):
+    new_ledger_name: str | None = Field(default=None, max_length=100)
     mapping: FieldMappingPayload | None = None
     target_ledger_id: str | None = None
     dedup_strategy: Literal["skip_duplicates", "insert_all"] | None = None
@@ -132,6 +142,9 @@ class PreviewRequest(BaseModel):
 class ImportSummary(BaseModel):
     """upload / preview 共享的响应主体。"""
 
+    new_ledger_name: str | None = None
+    source_ledger_name: str | None = None
+    attachment_count: int = 0
     import_token: str
     expires_at: datetime
     source_format: str
@@ -189,7 +202,7 @@ async def upload_import(
     if is_xlsx:
         try:
             data = parse_excel_bytes(payload=payload)
-        except RuntimeError as exc:
+        except (RuntimeError, ValueError, OSError) as exc:
             logger.warning("import.xlsx parse failed: %s", exc)
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -224,7 +237,8 @@ async def upload_import(
 
     # 把客户端时区偏移写进 suggested_mapping —— sample_transactions / 后续
     # preview / execute 全程继承,避免本地时间被当 UTC 整体偏移(issue #314)。
-    data.suggested_mapping.tz_offset_minutes = tz_offset_minutes
+    if data.source_format != "baishi_aa":
+        data.suggested_mapping.tz_offset_minutes = tz_offset_minutes
 
     # 校验 target_ledger_id(可空 — 用户可在 preview 阶段再选)
     target_ext_id = (target_ledger_id or "").strip() or None
@@ -283,11 +297,25 @@ async def preview_import(
             detail={"error_code": "IMPORT_TOKEN_EXPIRED"},
         )
 
+    if entry.executing:
+        raise HTTPException(409, detail='Import is already executing')
     new_mapping = req.mapping.to_internal() if req.mapping else entry.mapping
     new_target = req.target_ledger_id if req.target_ledger_id is not None else entry.target_ledger_id
     new_dedup = req.dedup_strategy or entry.dedup_strategy
     new_auto_tags = req.auto_tag_names if req.auto_tag_names is not None else entry.auto_tag_names
 
+    if 'new_ledger_name' in req.model_fields_set:
+        name = (req.new_ledger_name or '').strip()
+        if name and entry.data.source_format != 'baishi_aa':
+            raise HTTPException(400, detail='New-ledger import is supported for Baishi AA only')
+        entry.new_ledger_name = name or None
+        if name:
+            new_target = None
+    elif 'target_ledger_id' in req.model_fields_set:
+        entry.new_ledger_name = None
+        new_target = req.target_ledger_id or None
+    # cache.update_token的None代表保持原值；此处显式支持清空目标。
+    entry.target_ledger_id = new_target
     if new_target:
         _resolve_target_ledger(db, current_user, new_target)
 
@@ -300,7 +328,7 @@ async def preview_import(
         auto_tag_names=new_auto_tags,
     )
 
-    return _build_summary(
+    summary = _build_summary(
         token=token,
         expires_at=_expires_at_for(entry),
         data=entry.data,
@@ -311,6 +339,8 @@ async def preview_import(
         db=db,
         current_user=current_user,
     )
+    summary.new_ledger_name = entry.new_ledger_name
+    return summary
 
 
 # ──────────── execute(SSE) ────────────
@@ -330,15 +360,19 @@ async def execute_import(
             status_code=status.HTTP_410_GONE,
             detail={"error_code": "IMPORT_TOKEN_EXPIRED"},
         )
-    if not entry.target_ledger_id:
+    if not entry.target_ledger_id and not entry.new_ledger_name:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error_code": "IMPORT_NO_TARGET_LEDGER"},
         )
-    ledger = _resolve_target_ledger(db, current_user, entry.target_ledger_id)
+    ledger = _resolve_target_ledger(db, current_user, entry.target_ledger_id) if entry.target_ledger_id else None
 
     # transform 一次,确认无 row error 再开 transaction(避免无意义锁占用)
     txs, errors, _ = apply_mapping(rows=entry.data.rows, mapping=entry.mapping)
+    errors = list(entry.data.parse_errors) + errors
+    if entry.data.source_format == 'baishi_aa':
+        target_snapshot = snapshot_builder.build(db, ledger) if ledger is not None else {}
+        errors += validate_target(txs, target_snapshot, ledger.currency if ledger else 'CNY')
     if errors:
         async def err_stream():
             err = errors[0]
@@ -355,15 +389,17 @@ async def execute_import(
             )
         return StreamingResponse(err_stream(), media_type="text/event-stream")
 
+    if not claim_execution(token=token, user_id=current_user.id):
+        raise HTTPException(409, detail='Import is already executing')
     user_id = current_user.id
-    ledger_id_internal = ledger.id
-    ledger_external_id = ledger.external_id
-    ledger_user_id = ledger.user_id
     auto_tags = list(entry.auto_tag_names)
     dedup_strategy = entry.dedup_strategy
 
     async def stream():
+        nonlocal ledger
         try:
+            if ledger is None:
+                ledger = stage_ledger(db, user_id, entry.new_ledger_name)
             async for evt in _do_execute(
                 request=request,
                 db=db,
@@ -372,23 +408,24 @@ async def execute_import(
                 txs=txs,
                 auto_tags=auto_tags,
                 dedup_strategy=dedup_strategy,
+                import_data=entry.data,
+                on_committed=lambda: consume_token(token=token, user_id=user_id),
             ):
                 yield evt
-            # 成功后 consume token
-            consume_token(token=token, user_id=user_id)
             # broadcast(commit 之后)
             try:
                 await request.app.state.ws_manager.broadcast_to_user(
-                    ledger_user_id,
+                    ledger.user_id,
                     {
                         "type": "sync_change",
-                        "ledgerId": ledger_external_id,
+                        "ledgerId": ledger.external_id,
                         "serverTimestamp": datetime.now(timezone.utc).isoformat(),
                     },
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning("import.broadcast failed: %s", exc)
         except _ImportFailed as exc:
+            db.rollback()
             yield _sse_event(
                 "error",
                 {
@@ -399,6 +436,15 @@ async def execute_import(
                     "raw_line": exc.raw_line[:300],
                 },
             )
+
+        except Exception:
+            db.rollback()
+            logger.exception('import setup failed')
+            yield _sse_event('error', {'code':'IMPORT_SETUP_FAILED','row_number':0,
+                                     'message':'导入初始化失败，未保存更改。'})
+
+        finally:
+            release_execution(token=token, user_id=user_id)
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
@@ -412,6 +458,8 @@ async def _do_execute(
     txs: list,
     auto_tags: list[str],
     dedup_strategy: str,
+    import_data=None,
+    on_committed=None,
 ):
     """单事务 + SSE 进度。任一失败 → db.rollback() + raise _ImportFailed。"""
     lock_ledger_for_materialize(db, ledger.id)
@@ -421,8 +469,20 @@ async def _do_execute(
     existing_account_names, existing_category_keys, existing_tag_names, existing_dedup = build_existing_sets(snapshot)
 
     actor_payload_base = _payload_with_actor({}, _user_stub(user_id))
+    created_paths = []
+    committed = False
+    compatible = import_data is not None and import_data.source_format == 'baishi_aa'
+    existing_ids = {item.get('syncId') for item in snapshot.get('items', [])}
+
 
     try:
+        # 锁定后再次校验，防止预览后另一个写入者改变目标分类层级。
+        if compatible:
+            conflicts = validate_target(txs, snapshot, ledger.currency)
+            if conflicts:
+                err = conflicts[0]
+                raise _ImportFailed(code=err.code, row_number=err.row_number,
+                                    field_name=err.field_name, message=err.message, raw_line=err.raw_line)
         # 1. accounts
         account_diff_names = _collect_new_accounts(txs, existing_account_names)
         for i, name in enumerate(account_diff_names, 1):
@@ -499,13 +559,24 @@ async def _do_execute(
         seen_keys = set(existing_dedup)
         for idx, tx in enumerate(txs, 1):
             dedup_key = (tx.tx_type, f"{tx.amount}", tx.happened_at.isoformat())
-            if dedup_strategy == "skip_duplicates" and dedup_key in seen_keys:
+            stable_id = source_id(import_data.source_file_hash, tx.source_row_number) if compatible else None
+            duplicate = stable_id in existing_ids if compatible else dedup_key in seen_keys
+            if dedup_strategy == "skip_duplicates" and duplicate:
                 skipped += 1
             else:
                 seen_keys.add(dedup_key)
                 tx_payload = _build_tx_payload(tx, auto_tags, actor_payload_base)
                 try:
-                    snapshot, _ = create_transaction(snapshot, tx_payload)
+                    if import_data is not None:
+                        pictures = [a for a in import_data.attachments if a.row_number == tx.source_row_number]
+                        tx_payload['attachments'] = stage_attachments(db, ledger, user_id, pictures, created_paths)
+                    snapshot, generated_id = create_transaction(snapshot, tx_payload)
+                    if stable_id and dedup_strategy == 'skip_duplicates':
+                        for item in snapshot['items']:
+                            if item.get('syncId') == generated_id:
+                                item['syncId'] = stable_id
+                                break
+                        existing_ids.add(stable_id)
                 except (KeyError, ValueError, PermissionError) as exc:
                     raise _ImportFailed(
                         code="WRITE_TX_FAILED",
@@ -557,11 +628,16 @@ async def _do_execute(
                     "newTagsCount": len(all_tag_names),
                     "dedupStrategy": dedup_strategy,
                     "autoTagNames": auto_tags,
+                    "sourceFormat": import_data.source_format if import_data else None,
+                    "sourceFileHash": import_data.source_file_hash if import_data else None,
                 },
             )
         )
 
         db.commit()
+        committed = True
+        if on_committed is not None:
+            on_committed()
 
         yield _sse_event(
             "complete",
@@ -569,6 +645,7 @@ async def _do_execute(
                 "created_tx_count": total - skipped,
                 "skipped_count": skipped,
                 "new_change_id": new_change_id,
+                "ledger_id": ledger.external_id,
             },
         )
 
@@ -591,6 +668,12 @@ async def _do_execute(
             message=str(exc),
             raw_line="",
         )
+
+    finally:
+        if not committed:
+            db.rollback()
+            for path in created_paths:
+                path.unlink(missing_ok=True)
 
 
 # ──────────── cancel ────────────
@@ -660,6 +743,7 @@ def _resolve_target_ledger(db: Session, user: User, ledger_external_id: str) -> 
         db,
         user_id=user.id,
         ledger_external_id=ledger_external_id,
+        roles=_TRANSACTION_WRITE_ROLES,
     )
     if row is None:
         raise HTTPException(
@@ -691,23 +775,18 @@ def _build_summary(
 ) -> ImportSummary:
     """跑一次 transform + stats 计算并打包。"""
     txs, errors, warnings = apply_mapping(rows=data.rows, mapping=mapping)
+    errors = list(data.parse_errors) + errors
 
+    snapshot = {}
+    ledger = None
+    existing_acc, existing_cat, existing_tag, existing_dedup = set(), set(), set(), set()
     if target_ledger_ext_id:
-        try:
-            ledger = _resolve_target_ledger(db, current_user, target_ledger_ext_id)
-            snapshot = snapshot_builder.build(db, ledger)
-            existing_acc, existing_cat, existing_tag, existing_dedup = build_existing_sets(snapshot)
-        except HTTPException:
-            existing_acc = set()
-            existing_cat = set()
-            existing_tag = set()
-            existing_dedup = set()
-    else:
-        existing_acc = set()
-        existing_cat = set()
-        existing_tag = set()
-        existing_dedup = set()
+        ledger = _resolve_target_ledger(db, current_user, target_ledger_ext_id)
+        snapshot = snapshot_builder.build(db, ledger)
+        existing_acc, existing_cat, existing_tag, existing_dedup = build_existing_sets(snapshot)
 
+    if data.source_format == 'baishi_aa':
+        errors += validate_target(txs, snapshot if target_ledger_ext_id else {}, ledger.currency if ledger else 'CNY')
     stats = compute_stats(
         txs=txs,
         parse_errors=errors,
@@ -719,10 +798,16 @@ def _build_summary(
         extra_tag_names=auto_tag_names,
     )
 
+    if data.source_format == 'baishi_aa':
+        ids = {item.get('syncId') for item in snapshot.get('items', [])} if target_ledger_ext_id else set()
+        stats.skipped_dedup = sum(source_id(data.source_file_hash, tx.source_row_number) in ids for tx in txs)
+
     sample = [r.cells for r in data.rows[:5]]
     sample_txs = [_tx_to_payload(tx) for tx in txs[:10]]
 
     return ImportSummary(
+        source_ledger_name=data.source_ledger_name,
+        attachment_count=len(data.attachments),
         import_token=token,
         expires_at=expires_at,
         source_format=data.source_format,

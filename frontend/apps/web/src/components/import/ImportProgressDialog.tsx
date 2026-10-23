@@ -29,7 +29,7 @@ interface Props {
   open: boolean
   importToken: string | null
   onClose: () => void
-  onSuccess?: (data: { created_tx_count: number; skipped_count: number }) => void
+  onSuccess?: (data: { created_tx_count: number; skipped_count: number; ledger_id?: string }) => void | Promise<void>
 }
 
 export function ImportProgressDialog({ open, importToken, onClose, onSuccess }: Props) {
@@ -38,7 +38,7 @@ export function ImportProgressDialog({ open, importToken, onClose, onSuccess }: 
   const [progress, setProgress] = useState<Record<string, StageProgress>>({})
   const [phase, setPhase] = useState<'running' | 'complete' | 'error'>('running')
   const [completeData, setCompleteData] =
-    useState<{ created_tx_count: number; skipped_count: number } | null>(null)
+    useState<{ created_tx_count: number; skipped_count: number; ledger_id?: string } | null>(null)
   const [errorData, setErrorData] = useState<
     | { code: string; row_number: number; message: string; raw_line?: string; field_name?: string | null }
     | null
@@ -59,7 +59,7 @@ export function ImportProgressDialog({ open, importToken, onClose, onSuccess }: 
       try {
         for await (const ev of streamExecuteImport(token, importToken)) {
           if (aborted) break
-          handleEvent(ev)
+          await handleEvent(ev)
         }
       } catch (err) {
         if (!aborted) {
@@ -79,19 +79,21 @@ export function ImportProgressDialog({ open, importToken, onClose, onSuccess }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, importToken])
 
-  const handleEvent = (ev: ImportSseEvent) => {
+  const handleEvent = async (ev: ImportSseEvent) => {
     if (ev.event === 'stage') {
       setProgress((prev) => ({ ...prev, [ev.data.stage]: { ...ev.data } }))
     } else if (ev.event === 'complete') {
+      await onSuccess?.({
+        ledger_id: ev.data.ledger_id,
+        created_tx_count: ev.data.created_tx_count,
+        skipped_count: ev.data.skipped_count,
+      })
       setPhase('complete')
       setCompleteData({
         created_tx_count: ev.data.created_tx_count,
         skipped_count: ev.data.skipped_count,
       })
-      onSuccess?.({
-        created_tx_count: ev.data.created_tx_count,
-        skipped_count: ev.data.skipped_count,
-      })
+
     } else if (ev.event === 'error') {
       setPhase('error')
       setErrorData(ev.data)

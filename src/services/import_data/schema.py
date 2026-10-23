@@ -6,11 +6,11 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
-SUPPORTED_FORMATS = ("beecount", "generic")
+SUPPORTED_FORMATS = ("beecount", "generic", "baishi_aa")
 DEFAULT_DEDUP_STRATEGY = "skip_duplicates"
 
 DedupStrategy = Literal["skip_duplicates", "insert_all"]
-SourceFormat = Literal["beecount", "generic"]
+SourceFormat = Literal["beecount", "generic", "baishi_aa"]
 
 
 @dataclass
@@ -136,6 +136,15 @@ class ImportTransaction:
 
 
 @dataclass
+class ImportAttachment:
+    """解析期仅驻留内存，确认执行后才持久化。"""
+    row_number: int
+    file_name: str
+    mime_type: str
+    data: bytes
+
+
+@dataclass
 class ImportData:
     """server 内存 cache 里的完整解析结果。"""
 
@@ -144,3 +153,8 @@ class ImportData:
     rows: list[ParsedRow]  # 解析后的 row(已经移除 header / 描述行,只有数据)
     suggested_mapping: ImportFieldMapping
     parse_warnings: list[ParseWarning] = field(default_factory=list)
+
+    parse_errors: list[ImportError] = field(default_factory=list)
+    attachments: list[ImportAttachment] = field(default_factory=list)
+    source_file_hash: str | None = None
+    source_ledger_name: str | None = None

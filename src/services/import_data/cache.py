@@ -29,6 +29,8 @@ class _Entry:
     dedup_strategy: str
     auto_tag_names: list[str]
     created_at: float
+    new_ledger_name: str | None = None
+    executing: bool = False
 
 
 # 防御并发:upload / preview / execute 都可能同时碰到这张表
@@ -43,7 +45,7 @@ def _now() -> float:
 
 def _purge_expired() -> None:
     cutoff = _now() - _TTL_SECONDS
-    expired = [k for k, v in _TOKENS.items() if v.created_at < cutoff]
+    expired = [k for k, v in _TOKENS.items() if v.created_at < cutoff and not v.executing]
     for k in expired:
         entry = _TOKENS.pop(k, None)
         if entry is not None and _USER_ACTIVE.get(entry.user_id) == k:
@@ -146,7 +148,7 @@ def cancel_token(*, token: str, user_id: str) -> bool:
     """用户主动取消。"""
     with _lock:
         entry = _TOKENS.get(token)
-        if entry is None or entry.user_id != user_id:
+        if entry is None or entry.user_id != user_id or entry.executing:
             return False
         _TOKENS.pop(token, None)
         if _USER_ACTIVE.get(entry.user_id) == token:
@@ -159,3 +161,20 @@ def clear_all() -> None:
     with _lock:
         _TOKENS.clear()
         _USER_ACTIVE.clear()
+
+
+def claim_execution(*, token: str, user_id: str) -> bool:
+    """同一进程只允许一次执行，避免SSE重连或双击重复创建新账本。"""
+    with _lock:
+        entry = _TOKENS.get(token)
+        if entry is None or entry.user_id != user_id or entry.executing:
+            return False
+        entry.executing = True
+        return True
+
+
+def release_execution(*, token: str, user_id: str) -> None:
+    with _lock:
+        entry = _TOKENS.get(token)
+        if entry is not None and entry.user_id == user_id:
+            entry.executing = False

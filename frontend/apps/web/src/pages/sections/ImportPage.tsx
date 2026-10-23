@@ -6,6 +6,7 @@ import {
   Button,
   Card,
   CardContent,
+  Input,
   Select,
   SelectContent,
   SelectItem,
@@ -21,6 +22,7 @@ import {
   uploadImport,
 } from '@beecount/api-client'
 
+import { BaishiImportCard } from '../../components/import/BaishiImportCard'
 import { FieldMappingDialog } from '../../components/import/FieldMappingDialog'
 import { FileDropZone } from '../../components/import/FileDropZone'
 import { ImportProgressDialog } from '../../components/import/ImportProgressDialog'
@@ -45,15 +47,16 @@ export function ImportPage() {
   const toast = useToast()
   const navigate = useNavigate()
   const { token } = useAuth()
-  const { ledgers, activeLedgerId } = useLedgers()
+  const { ledgers, refreshLedgers, setActiveLedgerId } = useLedgers()
   const [searchParams] = useSearchParams()
 
+  const [newName, setNewName] = useState('')
   const [phase, setPhase] = useState<Phase>('idle')
   const [summary, setSummary] = useState<ImportSummary | null>(null)
   const [executeOpen, setExecuteOpen] = useState(false)
   const [mappingDialogOpen, setMappingDialogOpen] = useState(false)
 
-  const initialLedger = searchParams.get('ledger') || activeLedgerId || ''
+  const initialLedger = searchParams.get('ledger') || ''
 
   const handleSelectFile = useCallback(
     async (file: File) => {
@@ -64,6 +67,7 @@ export function ImportPage() {
           targetLedgerId: initialLedger || null,
         })
         setSummary(sum)
+        setNewName(sum.source_ledger_name || '')
         setPhase('preview')
       } catch (err) {
         setPhase('idle')
@@ -88,6 +92,7 @@ export function ImportPage() {
   const refreshPreview = useCallback(
     async (
       patch: {
+        newLedgerName?: string | null
         mapping?: ImportFieldMapping
         targetLedgerId?: string | null
         dedupStrategy?: 'skip_duplicates' | 'insert_all'
@@ -110,7 +115,7 @@ export function ImportPage() {
 
   const handleExecute = () => {
     if (!summary) return
-    if (!summary.target_ledger_id) {
+    if (!summary.target_ledger_id && !summary.new_ledger_name) {
       toast.error(t('import.exec.needLedger'))
       return
     }
@@ -123,7 +128,14 @@ export function ImportPage() {
   }
 
   const onSuccess = useCallback(
-    (data: { created_tx_count: number; skipped_count: number }) => {
+    async (data: { created_tx_count: number; skipped_count: number; ledger_id?: string }) => {
+      // 先刷新列表再选中新账本，避免账本校正逻辑用旧列表覆盖新选择。
+      try {
+        await refreshLedgers()
+      } catch (err) {
+        toast.error(localizeError(err, t))
+      }
+      if (data.ledger_id) setActiveLedgerId(data.ledger_id)
       toast.success(
         t('import.exec.successToast', {
           created: data.created_tx_count,
@@ -131,7 +143,7 @@ export function ImportPage() {
         }),
       )
     },
-    [toast, t],
+    [toast, t, refreshLedgers, setActiveLedgerId],
   )
 
   const requiredComplete = !!(
@@ -154,6 +166,8 @@ export function ImportPage() {
         </Button>
         <h1 className="text-lg font-semibold">{t('import.pageTitle')}</h1>
       </div>
+
+      <BaishiImportCard summary={summary} />
 
       {phase === 'idle' || (phase === 'uploading' && !summary) ? (
         <Card className="bc-panel">
@@ -218,16 +232,21 @@ export function ImportPage() {
                 {t('import.target.ledger')}:
               </span>
               <Select
-                value={summary.target_ledger_id || ''}
-                onValueChange={(v) =>
-                  void refreshPreview({ targetLedgerId: v || null })
-                }
+                value={summary.new_ledger_name ? '__new__' : summary.target_ledger_id || ''}
+                onValueChange={(v) => {
+                  if (v === '__new__') {
+                    const name = newName.trim() || summary.source_ledger_name || t('import.baishi.title')
+                    setNewName(name)
+                    void refreshPreview({ newLedgerName: name })
+                  } else void refreshPreview({ targetLedgerId: v || null })
+                }}
                 disabled={phase === 'uploading'}
               >
                 <SelectTrigger className="h-7 w-[180px] text-xs">
                   <SelectValue placeholder={t('import.target.pickLedger')} />
                 </SelectTrigger>
                 <SelectContent>
+                  {summary.source_format === 'baishi_aa' ? <SelectItem value="__new__">{t('import.baishi.newLedger')}</SelectItem> : null}
                   {ledgers.map((l) => (
                     <SelectItem key={l.ledger_id} value={l.ledger_id}>
                       {l.ledger_name}
@@ -236,6 +255,18 @@ export function ImportPage() {
                 </SelectContent>
               </Select>
             </div>
+            {summary.new_ledger_name ? <Input
+              className="h-8 w-full sm:w-56"
+              aria-label={t('import.baishi.newName')}
+              value={newName}
+              maxLength={100}
+              onChange={(e) => setNewName(e.target.value)}
+              onBlur={() => {
+                if (newName.trim() && newName.trim() !== summary.new_ledger_name)
+                  void refreshPreview({ newLedgerName: newName.trim() })
+              }}
+              disabled={phase === 'uploading' || phase === 'executing'}
+            /> : null}
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-muted-foreground">
                 {t('import.target.dedup')}:
@@ -280,7 +311,8 @@ export function ImportPage() {
                 disabled={
                   phase === 'uploading' ||
                   phase === 'executing' ||
-                  !summary.target_ledger_id ||
+                  (!summary.target_ledger_id && !summary.new_ledger_name) ||
+                  (!!summary.new_ledger_name && newName.trim() !== summary.new_ledger_name) ||
                   summary.stats.parse_errors_total > 0
                 }
               >

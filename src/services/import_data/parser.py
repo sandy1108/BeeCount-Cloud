@@ -76,6 +76,14 @@ def parse_excel_bytes(
             "openpyxl is required for .xlsx import; pip install openpyxl"
         ) from exc
 
+    # 先限制解压后体积，避免小体积压缩文件占满服务内存。
+    import zipfile
+    try:
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            if sum(i.file_size for i in archive.infolist()) > 80 * 1024 * 1024:
+                raise RuntimeError("Excel解压后超过80MB限制")
+    except zipfile.BadZipFile as exc:
+        raise ValueError("Excel文件损坏或不是有效的xlsx文件") from exc
     wb = load_workbook(filename=io.BytesIO(payload), read_only=True, data_only=True)
     if not wb.sheetnames:
         return _build_import_data(rows_2d=[], forced_source=forced_source)
@@ -83,6 +91,9 @@ def parse_excel_bytes(
 
     rows_2d: list[list[str]] = []
     for row in ws.iter_rows(values_only=True):
+        if len(rows_2d) > 50_030:
+            wb.close()
+            raise ValueError("Excel行数超过50000条账单限制")
         cells: list[str] = []
         for v in row:
             if v is None:
@@ -93,7 +104,12 @@ def parse_excel_bytes(
             else:
                 cells.append(str(v))
         rows_2d.append(cells)
+    sheet_count = len(wb.sheetnames)
     wb.close()
+    from ..compatibility.baishi_aa import parse as parse_baishi
+    compatible = parse_baishi(payload, rows_2d, sheet_count)
+    if compatible is not None:
+        return compatible
 
     return _build_import_data(rows_2d=rows_2d, forced_source=forced_source)
 

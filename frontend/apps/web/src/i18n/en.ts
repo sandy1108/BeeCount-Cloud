@@ -153,6 +153,13 @@ const en = {
   'cmdk.action.importLedger': 'Import ledger data',
 
   // Ledger import
+  'import.baishi.title': 'Import from Baishi AA',
+  'import.baishi.description': 'Upload a Baishi AA Excel export, review it, and import into BeeCount.',
+  'import.baishi.source': 'Source ledger: {name}',
+  'import.baishi.images': '{count} images',
+  'import.baishi.scope': 'Supports single-person CNY transactions and subcategories. Choose a target ledger explicitly. Unsupported data blocks import.',
+  'import.baishi.newLedger': 'Create a new ledger',
+  'import.baishi.newName': 'New ledger name',
   'import.pageTitle': 'Import ledger data',
   'import.uploading': 'Parsing…',
   'import.drop.title': 'Drag a file here / click to choose',

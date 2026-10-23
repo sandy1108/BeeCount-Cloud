@@ -664,6 +664,13 @@ const zhCN = {
   'cmdk.action.importLedger': '导入账本数据',
 
   // 账本导入页 — .docs/web-ledger-import.md
+  'import.baishi.title': '百事AA账单迁移',
+  'import.baishi.description': '上传百事AA导出的 Excel，核对后导入蜜蜂记账。',
+  'import.baishi.source': '源账本：{name}',
+  'import.baishi.images': '{count} 张图片',
+  'import.baishi.scope': '支持单人人民币收支和二级分类；目标账本需明确选择，不支持的内容会阻止导入。',
+  'import.baishi.newLedger': '创建新账本',
+  'import.baishi.newName': '新账本名称',
   'import.pageTitle': '导入账本数据',
   'import.uploading': '正在解析…',
   'import.drop.title': '拖拽文件到这里 / 点击选择',

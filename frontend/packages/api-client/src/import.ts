@@ -10,7 +10,7 @@
 import { API_BASE, authedDelete, authedPost } from './http'
 import { ApiError, extractApiError } from './errors'
 
-export type ImportSourceFormat = 'beecount' | 'alipay' | 'wechat' | 'generic'
+export type ImportSourceFormat = 'baishi_aa' | 'beecount' | 'alipay' | 'wechat' | 'generic'
 
 export type ImportFieldMapping = {
   /** v30 多币种:币种列(可选,值须像 ISO code)。 */
@@ -89,6 +89,9 @@ export type ImportTransactionSample = {
 }
 
 export type ImportSummary = {
+  source_ledger_name?: string | null
+  attachment_count: number
+  new_ledger_name?: string | null
   import_token: string
   expires_at: string
   source_format: ImportSourceFormat
@@ -106,7 +109,7 @@ export type ImportSummary = {
 /** SSE 事件类型 */
 export type ImportSseEvent =
   | { event: 'stage'; data: { stage: 'accounts' | 'categories' | 'tags' | 'transactions'; done: number; total: number; skipped?: number } }
-  | { event: 'complete'; data: { created_tx_count: number; skipped_count: number; new_change_id: number } }
+  | { event: 'complete'; data: { created_tx_count: number; skipped_count: number; new_change_id: number; ledger_id?: string } }
   | {
       event: 'error'
       data: {
@@ -143,6 +146,7 @@ export async function uploadImport(
 // ──────────────── preview ────────────────
 
 export type PreviewImportOptions = {
+  newLedgerName?: string | null
   mapping?: ImportFieldMapping
   targetLedgerId?: string | null
   dedupStrategy?: 'skip_duplicates' | 'insert_all'
@@ -164,6 +168,7 @@ export async function previewImport(
         options.mapping.tz_offset_minutes ?? -new Date().getTimezoneOffset(),
     }
   }
+  if (options.newLedgerName !== undefined) body.new_ledger_name = options.newLedgerName
   if (options.targetLedgerId !== undefined) body.target_ledger_id = options.targetLedgerId
   if (options.dedupStrategy !== undefined) body.dedup_strategy = options.dedupStrategy
   if (options.autoTagNames !== undefined) body.auto_tag_names = options.autoTagNames
