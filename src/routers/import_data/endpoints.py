@@ -145,6 +145,7 @@ class ImportSummary(BaseModel):
 
     new_ledger_name: str | None = None
     source_ledger_name: str | None = None
+    source_currency: str | None = None
     attachment_count: int = 0
     import_token: str
     expires_at: datetime
@@ -386,8 +387,10 @@ async def review_import(
         raise HTTPException(400, detail={'error_code': 'IMPORT_NO_TARGET_LEDGER'})
     ledger = _resolve_target_ledger(db, current_user, entry.target_ledger_id) if entry.target_ledger_id else None
     txs, errors, _ = apply_mapping(rows=entry.data.rows, mapping=entry.mapping)
-    if errors or entry.data.parse_errors:
-        raise HTTPException(400, detail='Resolve parse errors before review')
+    target_snapshot = snapshot_builder.build(db, ledger) if ledger else {}
+    target_errors = validate_target(txs, target_snapshot, ledger.currency if ledger else entry.data.source_currency, entry.data.source_currency)
+    if errors or entry.data.parse_errors or target_errors:
+        raise HTTPException(400, detail='Resolve parse errors or target currency/category conflicts before review')
     plan = _review_plan(db, entry, txs, ledger)
     if (req.confirm or req.decisions) and req.revision != plan['revision']:
         entry.review_revision = None
@@ -441,7 +444,7 @@ async def execute_import(
     errors = list(entry.data.parse_errors) + errors
     if entry.data.source_format == 'baishi_aa':
         target_snapshot = snapshot_builder.build(db, ledger) if ledger is not None else {}
-        errors += validate_target(txs, target_snapshot, ledger.currency if ledger else 'CNY')
+        errors += validate_target(txs, target_snapshot, ledger.currency if ledger else entry.data.source_currency, entry.data.source_currency)
     if errors:
         async def err_stream():
             err = errors[0]
@@ -478,7 +481,7 @@ async def execute_import(
         nonlocal ledger
         try:
             if ledger is None:
-                ledger = stage_ledger(db, user_id, entry.new_ledger_name)
+                ledger = stage_ledger(db, user_id, entry.new_ledger_name, entry.data.source_currency)
             async for evt in _do_execute(
                 request=request,
                 db=db,
@@ -576,7 +579,7 @@ async def _do_execute(
             write_txs = [tx for tx in txs if review_rows[tx.source_row_number]['action'] == 'insert']
         # 锁定后再次校验，防止预览后另一个写入者改变目标分类层级。
         if compatible:
-            conflicts = validate_target(txs, snapshot, ledger.currency)
+            conflicts = validate_target(txs, snapshot, ledger.currency, import_data.source_currency)
             if conflicts:
                 err = conflicts[0]
                 raise _ImportFailed(code=err.code, row_number=err.row_number,
@@ -883,7 +886,7 @@ def _build_summary(
         existing_acc, existing_cat, existing_tag, existing_dedup = build_existing_sets(snapshot)
 
     if data.source_format == 'baishi_aa':
-        errors += validate_target(txs, snapshot if target_ledger_ext_id else {}, ledger.currency if ledger else 'CNY')
+        errors += validate_target(txs, snapshot if target_ledger_ext_id else {}, ledger.currency if ledger else data.source_currency, data.source_currency)
     stats = compute_stats(
         txs=txs,
         parse_errors=errors,
@@ -906,6 +909,7 @@ def _build_summary(
 
     return ImportSummary(
         source_ledger_name=data.source_ledger_name,
+        source_currency=data.source_currency,
         attachment_count=len(data.attachments),
         import_token=token,
         expires_at=expires_at,

@@ -6,7 +6,7 @@ import hashlib
 import json
 from collections import defaultdict, deque
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -56,6 +56,7 @@ def candidate(item) -> dict:
         "sync_id": item["syncId"],
         "tx_type": item.get("type"),
         "amount": str(item.get("amount")),
+        "currency_code": item.get("currencyCode"),
         "happened_at": item.get("happenedAt"),
         "note": item.get("note"),
         "category_name": item.get("categoryName"),
@@ -79,14 +80,29 @@ def build_review(db, entry, txs, ledger, snapshot, decisions=None) -> dict:
     )
     exact = defaultdict(set)
     by_time = defaultdict(set)
+    by_amount = defaultdict(set)
+    base_currency = ledger.currency if ledger else entry.data.source_currency
+
+    def currency(item):
+        return item.get("currencyCode") or base_currency
+
+    def amount_key(kind, code, amount):
+        return (kind, code, Decimal(str(amount)).normalize())
+
     for item_id, item in live.items():
-        by_time[(item.get("type"), instant(item["happenedAt"]))].add(item_id)
+        by_time[(item.get("type"), currency(item), instant(item["happenedAt"]))].add(item_id)
+        by_amount[amount_key(item.get("type"), currency(item), item["amount"])].add(item_id)
     for record in records:
         if record.transaction_sync_id in live:
             exact[record.fingerprint].add(record.transaction_sync_id)
             original = record.source_payload["cells"]
             kind = {"支出": "expense", "收入": "income"}[original["交易类型"]]
-            by_time[(kind, original["日期"])].add(record.transaction_sync_id)
+            by_time[(kind, original.get("币种") or base_currency, original["日期"])].add(
+                record.transaction_sync_id
+            )
+            by_amount[
+                amount_key(kind, original.get("币种") or base_currency, original["交易金额"])
+            ].add(record.transaction_sync_id)
     revision = digest(
         {
             "file": entry.data.source_file_hash,
@@ -126,6 +142,7 @@ def build_review(db, entry, txs, ledger, snapshot, decisions=None) -> dict:
                 "incoming": {
                     "tx_type": tx.tx_type,
                     "amount": str(tx.amount),
+                    "currency_code": tx.currency_code,
                     "happened_at": tx.happened_at.isoformat(),
                     "note": tx.note,
                     "category_name": tx.category_name,
@@ -138,16 +155,36 @@ def build_review(db, entry, txs, ledger, snapshot, decisions=None) -> dict:
         )
     available = {key: sorted(ids - used) for key, ids in by_time.items()}
     choices = entry.review_decisions if decisions is None else decisions
+    claimed = set()
     for tx, row in zip(txs, rows, strict=True):
         if row["match_id"]:
             ids = [row["match_id"]]
         else:
-            ids = available.get((tx.tx_type, instant(tx.happened_at)), [])
+            ids = available.get((tx.tx_type, tx.currency_code, instant(tx.happened_at)), [])
+            # 改过时间的来源无法精确识别；仅给出前后7天同币种同金额候选，绝不自动跳过。
+            near = by_amount.get(amount_key(tx.tx_type, tx.currency_code, tx.amount), set()) - used
+            nearby = [
+                i
+                for i in near
+                if abs(
+                    datetime.fromisoformat(instant(live[i]["happenedAt"]))
+                    - datetime.fromisoformat(instant(tx.happened_at))
+                )
+                <= timedelta(days=7)
+            ]
+            if nearby:
+                if not ids:
+                    row["reason"] = "near_time"
+                ids = sorted(set(ids) | set(nearby))
             if ids:
-                row["kind"], row["reason"] = "review", "similar"
+                row["kind"] = "review"
+                if row["reason"] != "near_time":
+                    row["reason"] = "similar"
         # 限制候选展示数量；明确显示总数，不自动选择未展示的记录。
         row["candidate_count"] = len(ids)
-        row["candidates"] = [candidate(live[i]) for i in ids[:20]]
+        row["candidates"] = [
+            {**candidate(live[i]), "currency_code": currency(live[i])} for i in ids[:20]
+        ]
         choice = choices.get(str(row["row_number"]))
         if choice:
             if choice["action"] == "skip":
@@ -161,6 +198,13 @@ def build_review(db, entry, txs, ledger, snapshot, decisions=None) -> dict:
             row["action"], row["match_id"] = "insert", None
         else:
             row["action"] = {"matched": "skip", "new": "insert", "review": None}[row["kind"]]
+        # 整批核对必须一对一；人工选择也不能让同一旧记录吞掉多笔消费。
+        if row["action"] == "skip":
+            if row["match_id"] in claimed:
+                raise ValueError(
+                    "同一条已有记录不能关联本批次的多条来源记录，请为其他行选择新增或不同候选。"
+                )
+            claimed.add(row["match_id"])
     counts = {
         kind: sum(row["kind"] == kind for row in rows) for kind in ("new", "matched", "review")
     }

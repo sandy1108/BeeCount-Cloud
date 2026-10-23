@@ -26,7 +26,7 @@ export function ImportSourceCard({ entry, summary }: { entry: ImportEntry; summa
           </div>
           {baishi && summary ? (
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span>{t('import.baishi.source', { name: summary.source_ledger_name || '—' })}</span>
+              <span>{t('import.baishi.source', { name: `${summary.source_ledger_name || '—'} · ${summary.source_currency || '—'}` })}</span>
               <span className="inline-flex items-center gap-1"><Image className="h-3.5 w-3.5" />{t('import.baishi.images', { count: summary.attachment_count })}</span>
             </div>
           ) : null}

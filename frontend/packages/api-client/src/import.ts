@@ -90,6 +90,7 @@ export type ImportTransactionSample = {
 
 export type ImportSummary = {
   source_ledger_name?: string | null
+  source_currency?: string | null
   attachment_count: number
   new_ledger_name?: string | null
   import_token: string
@@ -249,13 +250,14 @@ export async function cancelImport(token: string, importToken: string): Promise<
 /** 百事AA核对结果：原始来源字段只留服务端，按页返回核对所需内容。 */
 export type ImportReviewChoice = { action: 'insert' | 'skip'; match_id?: string | null }
 export type ImportReviewTransaction = {
+  currency_code?: string | null
   tx_type: string; amount: string; happened_at: string; note: string | null
   category_name: string | null; account_name: string | null
 }
 export type ImportReviewRow = {
   row_number: number
   kind: 'new' | 'matched' | 'review'
-  reason: 'new' | 'same_file' | 'content' | 'similar'
+  reason: 'new' | 'same_file' | 'content' | 'similar' | 'near_time'
   action: 'insert' | 'skip' | null
   match_id: string | null
   incoming: ImportReviewTransaction

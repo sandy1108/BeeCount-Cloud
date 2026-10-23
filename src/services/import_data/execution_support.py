@@ -13,10 +13,10 @@ from ...config import get_settings
 from ...models import AttachmentFile, Ledger, LedgerMember, SyncChange
 
 
-def stage_ledger(db, user_id: str, name: str) -> Ledger:
+def stage_ledger(db, user_id: str, name: str, currency: str = "CNY") -> Ledger:
     """只暂存账本及同步事件，避免调用会提前commit的HTTP建账本路由。"""
     external_id = "ledger_" + uuid4().hex[:12]
-    ledger = Ledger(user_id=user_id, external_id=external_id, name=name, currency="CNY")
+    ledger = Ledger(user_id=user_id, external_id=external_id, name=name, currency=currency)
     db.add(ledger)
     db.flush()
     now = datetime.now(timezone.utc)
@@ -28,7 +28,7 @@ def stage_ledger(db, user_id: str, name: str) -> Ledger:
             entity_type="ledger",
             entity_sync_id=external_id,
             action="upsert",
-            payload_json={"ledgerName": name, "currency": "CNY", "monthStartDay": 1},
+            payload_json={"ledgerName": name, "currency": currency, "monthStartDay": 1},
             updated_at=now,
             updated_by_device_id="web-import",
             updated_by_user_id=user_id,

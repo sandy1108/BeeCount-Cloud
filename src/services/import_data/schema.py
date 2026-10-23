@@ -159,3 +159,4 @@ class ImportData:
     source_records: dict[int, dict[str, str]] = field(default_factory=dict)
     source_file_hash: str | None = None
     source_ledger_name: str | None = None
+    source_currency: str | None = None

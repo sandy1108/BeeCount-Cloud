@@ -100,13 +100,13 @@ export function ImportReviewDialog({ open, token, importToken, insertAll, onClos
                   </option>)}
                 </select>
               </div>
-              <p className="text-sm">{formatIsoDateTimeLocal(row.incoming.happened_at)} · {row.incoming.tx_type === 'income' ? '+' : '−'}{row.incoming.amount} · {row.incoming.category_name || '—'} · {row.incoming.account_name || '—'}</p>
+              <p className="text-sm">{formatIsoDateTimeLocal(row.incoming.happened_at)} · {row.incoming.tx_type === 'income' ? '+' : '−'}{row.incoming.amount} {row.incoming.currency_code || ''} · {row.incoming.category_name || '—'} · {row.incoming.account_name || '—'}</p>
               <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{row.incoming.note || '—'}</p>
               {row.candidates.length ? <details className="rounded-lg bg-muted/40 p-2 text-xs" open={row.kind === 'review'}>
                 <summary className="cursor-pointer">{t('import.review.existing', { count: row.candidate_count })}</summary>
-                <p className="mt-2 text-muted-foreground">{t(row.reason === 'same_file' ? 'import.review.sameFile' : row.reason === 'content' ? 'import.review.content' : 'import.review.similar')}</p>
+                <p className="mt-2 text-muted-foreground">{t(row.reason === 'same_file' ? 'import.review.sameFile' : row.reason === 'content' ? 'import.review.content' : row.reason === 'near_time' ? 'import.review.nearTime' : 'import.review.similar')}</p>
                 {row.candidates.map((item, i) => <div key={item.sync_id} className="mt-2 whitespace-pre-wrap break-words border-t pt-2">
-                  #{i + 1} · {formatIsoDateTimeLocal(item.happened_at)} · {item.amount} · {item.category_name || '—'} · {item.account_name || '—'}<br />{item.note || '—'}
+                  #{i + 1} · {formatIsoDateTimeLocal(item.happened_at)} · {item.amount} {item.currency_code || ''} · {item.category_name || '—'} · {item.account_name || '—'}<br />{item.note || '—'}
                 </div>)}
                 {row.candidate_count > row.candidates.length ? <p className="mt-2">{t('import.review.candidateLimit')}</p> : null}
               </details> : null}

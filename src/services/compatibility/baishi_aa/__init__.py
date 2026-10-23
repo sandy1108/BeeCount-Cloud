@@ -18,6 +18,9 @@ from ...import_data.schema import (
     ParseWarning,
 )
 
+SUPPORTED_CURRENCIES = frozenset({"CNY", "USD", "JPY", "HKD", "MOP"})
+
+
 HEADERS = [
     "交易类型",
     "账本名称",
@@ -99,6 +102,7 @@ def parse(payload: bytes, rows: list[list[str]], sheet_count: int) -> ImportData
     if sheet_count != 1:
         error(0, "百事AA首期仅支持单工作表文件，请拆分后导入，避免遗漏其他账本。")
     names = set()
+    currencies = set()
     for n, row in enumerate(rows[index + 1 :], index + 2):
         if not any(row):
             continue
@@ -126,8 +130,13 @@ def parse(payload: bytes, rows: list[list[str]], sheet_count: int) -> ImportData
             error(n, "金额不是有效数字。")
         if cells["交易类型"] not in ("支出", "收入"):
             error(n, "首期仅支持普通收入和支出，不支持转账、结算或退款。")
-        if cells["币种"] != "CNY":
-            error(n, "首期仅支持人民币账本。")
+        # 只接受明确代码；“澳币”和单独$等名称存在歧义，不能擅自猜币种。
+        code = cells["币种"].strip().upper()
+        cells["币种"] = code
+        data.source_records[n]["币种"] = code
+        currencies.add(code)
+        if code not in SUPPORTED_CURRENCIES:
+            error(n, "仅支持CNY、USD、JPY、HKD、MOP；澳门币请使用MOP，不能用含糊的澳币。")
         members = [cells[k] for k in ("创建者", "付款人", "分账人")]
         if (
             not members[0]
@@ -165,6 +174,9 @@ def parse(payload: bytes, rows: list[list[str]], sheet_count: int) -> ImportData
     if len(names) != 1:
         error(0, "文件须只包含一个明确的源账本。")
     data.source_ledger_name = next(iter(names), "")
+    if len(currencies) != 1:
+        error(0, "本轮仅支持单币种文件，请按币种拆分，不能混合金额。")
+    data.source_currency = next(iter(currencies)) if len(currencies) == 1 else None
     try:
         data.attachments = _pictures(payload, {r.row_number for r in data.rows})
     except (ValueError, KeyError, ET.ParseError) as exc:
@@ -173,7 +185,7 @@ def parse(payload: bytes, rows: list[list[str]], sheet_count: int) -> ImportData
         ParseWarning(
             "BAISHI_SCOPE",
             0,
-            "兼容单人CNY收支；同文件重复导入按原始行去重。重新导出的不同文件须人工核对重叠记录。",
+            "兼容单人、单币种CNY/USD/JPY/HKD/MOP收支，目标账本须同币种；重导文件须核对重复记录，时间修改候选仅提示前后7天的同币种同金额记录。",
         )
     )
     return data
@@ -233,11 +245,24 @@ def _pictures(payload: bytes, valid_rows: set[int]) -> list[ImportAttachment]:
     return out
 
 
-def validate_target(txs, snapshot: dict, currency: str) -> list[ImportError]:
+def validate_target(
+    txs, snapshot: dict, currency: str, source_currency: str | None = None
+) -> list[ImportError]:
     """通用写入按名称匹配分类，因此同名却不同层级/父类时阻断而非错配。"""
     errors = []
-    if currency != "CNY":
-        errors.append(ImportError("BAISHI_UNSUPPORTED", 0, "首期仅支持导入人民币目标账本。"))
+    codes = {tx.currency_code for tx in txs}
+    if (
+        currency not in SUPPORTED_CURRENCIES
+        or (txs and codes != {currency})
+        or (source_currency is not None and source_currency != currency)
+    ):
+        errors.append(
+            ImportError(
+                "BAISHI_UNSUPPORTED",
+                0,
+                "文件须为支持的单一币种，且与目标账本币种一致；不支持混币或汇率折算。",
+            )
+        )
     parents = {}
     for category in snapshot.get("categories", []):
         parents[(category.get("name"), category.get("kind"))] = category.get("parentName") or None
