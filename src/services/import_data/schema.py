@@ -156,5 +156,6 @@ class ImportData:
 
     parse_errors: list[ImportError] = field(default_factory=list)
     attachments: list[ImportAttachment] = field(default_factory=list)
+    source_records: dict[int, dict[str, str]] = field(default_factory=dict)
     source_file_hash: str | None = None
     source_ledger_name: str | None = None

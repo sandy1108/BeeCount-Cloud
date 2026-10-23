@@ -30,7 +30,8 @@ from ...routers.write._shared import (
     _payload_with_actor,
     get_accessible_ledger_by_external_id,
 )
-from ...services.compatibility.baishi_aa import source_id, validate_target
+from ...services.compatibility.baishi_aa import validate_target
+from ...services.compatibility.baishi_aa.review import build_review, public_review, stage_source
 from ...services.import_data import (
     ImportError as ImpError,
 )
@@ -299,6 +300,8 @@ async def preview_import(
 
     if entry.executing:
         raise HTTPException(409, detail='Import is already executing')
+    entry.review_revision = None
+    entry.review_decisions = {}
     new_mapping = req.mapping.to_internal() if req.mapping else entry.mapping
     new_target = req.target_ledger_id if req.target_ledger_id is not None else entry.target_ledger_id
     new_dedup = req.dedup_strategy or entry.dedup_strategy
@@ -341,6 +344,72 @@ async def preview_import(
     )
     summary.new_ledger_name = entry.new_ledger_name
     return summary
+
+
+class ReviewChoice(BaseModel):
+    action: Literal['insert', 'skip']
+    match_id: str | None = None
+
+
+class ReviewRequest(BaseModel):
+    revision: str | None = None
+    decisions: dict[str, ReviewChoice] = Field(default_factory=dict, max_length=50_000)
+    confirm: bool = False
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=25, ge=1, le=100)
+
+
+def _review_plan(db, entry, txs, ledger):
+    snapshot = snapshot_builder.build(db, ledger) if ledger else {}
+    plan = build_review(db, entry, txs, ledger, snapshot, decisions={})
+    if entry.review_base_revision != plan['revision']:
+        entry.review_decisions = {}
+        entry.review_base_revision = plan['revision']
+    return build_review(db, entry, txs, ledger, snapshot) if entry.review_decisions else plan
+
+
+@router.post('/{token}/review')
+async def review_import(
+    token: str, req: ReviewRequest,
+    _scopes: set[str] = Depends(_WRITE_SCOPE_DEP),
+    current_user: User = Depends(get_current_user), db: Session = Depends(get_db),
+):
+    """核对仅返回预览；显式确认后才允许后续执行，分页不省略未决项。"""
+    entry = get_token_data(token=token, user_id=current_user.id)
+    if entry is None:
+        raise HTTPException(410, detail={'error_code': 'IMPORT_TOKEN_EXPIRED'})
+    if entry.executing:
+        raise HTTPException(409, detail='Import is already executing')
+    if entry.data.source_format != 'baishi_aa':
+        raise HTTPException(400, detail='Review is only available for Baishi AA')
+    if not entry.target_ledger_id and not entry.new_ledger_name:
+        raise HTTPException(400, detail={'error_code': 'IMPORT_NO_TARGET_LEDGER'})
+    ledger = _resolve_target_ledger(db, current_user, entry.target_ledger_id) if entry.target_ledger_id else None
+    txs, errors, _ = apply_mapping(rows=entry.data.rows, mapping=entry.mapping)
+    if errors or entry.data.parse_errors:
+        raise HTTPException(400, detail='Resolve parse errors before review')
+    plan = _review_plan(db, entry, txs, ledger)
+    if (req.confirm or req.decisions) and req.revision != plan['revision']:
+        entry.review_revision = None
+        entry.review_decisions = {}
+        raise HTTPException(409, detail={'error_code': 'IMPORT_REVIEW_STALE'})
+    if req.decisions:
+        valid_rows = {str(tx.source_row_number) for tx in txs}
+        if not set(req.decisions) <= valid_rows:
+            raise HTTPException(400, detail='Invalid source row')
+        previous = entry.review_decisions
+        entry.review_decisions = {**previous, **{k: v.model_dump() for k, v in req.decisions.items()}}
+        try:
+            plan = _review_plan(db, entry, txs, ledger)
+        except ValueError as exc:
+            entry.review_decisions = previous
+            raise HTTPException(400, detail=str(exc)) from exc
+    entry.review_revision = None
+    if req.confirm:
+        if plan['counts']['unresolved']:
+            raise HTTPException(409, detail={'error_code': 'IMPORT_REVIEW_UNRESOLVED'})
+        entry.review_revision = plan['revision']
+    return public_review(plan, req.offset, req.limit)
 
 
 # ──────────── execute(SSE) ────────────
@@ -389,11 +458,21 @@ async def execute_import(
             )
         return StreamingResponse(err_stream(), media_type="text/event-stream")
 
+    if entry.data.source_format == 'baishi_aa':
+        plan = _review_plan(db, entry, txs, ledger)
+        if not entry.review_revision:
+            raise HTTPException(409, detail={'error_code': 'IMPORT_REVIEW_REQUIRED'})
+        if plan['revision'] != entry.review_revision:
+            entry.review_revision = None
+            raise HTTPException(409, detail={'error_code': 'IMPORT_REVIEW_STALE'})
+
     if not claim_execution(token=token, user_id=current_user.id):
         raise HTTPException(409, detail='Import is already executing')
     user_id = current_user.id
     auto_tags = list(entry.auto_tag_names)
     dedup_strategy = entry.dedup_strategy
+
+    is_new_ledger = ledger is None
 
     async def stream():
         nonlocal ledger
@@ -409,6 +488,8 @@ async def execute_import(
                 auto_tags=auto_tags,
                 dedup_strategy=dedup_strategy,
                 import_data=entry.data,
+                review_entry=entry if entry.data.source_format == 'baishi_aa' else None,
+                is_new_ledger=is_new_ledger,
                 on_committed=lambda: consume_token(token=token, user_id=user_id),
             ):
                 yield evt
@@ -459,6 +540,8 @@ async def _do_execute(
     auto_tags: list[str],
     dedup_strategy: str,
     import_data=None,
+    review_entry=None,
+    is_new_ledger=False,
     on_committed=None,
 ):
     """单事务 + SSE 进度。任一失败 → db.rollback() + raise _ImportFailed。"""
@@ -472,10 +555,25 @@ async def _do_execute(
     created_paths = []
     committed = False
     compatible = import_data is not None and import_data.source_format == 'baishi_aa'
-    existing_ids = {item.get('syncId') for item in snapshot.get('items', [])}
 
 
     try:
+        review_rows = {}
+        write_txs = txs
+        if compatible:
+            # 获得数据库写入串行化锁后再核对，过期的确认不能用于写入。
+            plan = build_review(db, review_entry, txs,
+                                None if is_new_ledger else ledger, {} if is_new_ledger else snapshot, decisions={})
+            if plan['revision'] != review_entry.review_revision:
+                raise _ImportFailed(code='IMPORT_REVIEW_STALE', row_number=0, field_name=None,
+                                    message='目标账本已变化，请关闭进度窗口并重新核对。', raw_line='')
+            plan = build_review(db, review_entry, txs,
+                                None if is_new_ledger else ledger, {} if is_new_ledger else snapshot)
+            if plan['counts']['unresolved']:
+                raise _ImportFailed(code='IMPORT_REVIEW_UNRESOLVED', row_number=0, field_name=None,
+                                    message='仍有待确认记录，请重新核对。', raw_line='')
+            review_rows = {r['row_number']: r for r in plan['items']}
+            write_txs = [tx for tx in txs if review_rows[tx.source_row_number]['action'] == 'insert']
         # 锁定后再次校验，防止预览后另一个写入者改变目标分类层级。
         if compatible:
             conflicts = validate_target(txs, snapshot, ledger.currency)
@@ -484,7 +582,7 @@ async def _do_execute(
                 raise _ImportFailed(code=err.code, row_number=err.row_number,
                                     field_name=err.field_name, message=err.message, raw_line=err.raw_line)
         # 1. accounts
-        account_diff_names = _collect_new_accounts(txs, existing_account_names)
+        account_diff_names = _collect_new_accounts(write_txs, existing_account_names)
         for i, name in enumerate(account_diff_names, 1):
             try:
                 snapshot, _ = create_account(
@@ -505,7 +603,7 @@ async def _do_execute(
             )
 
         # 2. categories
-        category_diff = _collect_new_categories(txs, existing_category_keys)
+        category_diff = _collect_new_categories(write_txs, existing_category_keys)
         for i, (name, kind, parent) in enumerate(category_diff, 1):
             try:
                 snapshot, _ = create_category(
@@ -532,7 +630,7 @@ async def _do_execute(
             )
 
         # 3. tags(包括 auto_tags)
-        all_tag_names = _collect_new_tags(txs, auto_tags, existing_tag_names)
+        all_tag_names = _collect_new_tags(write_txs, auto_tags, existing_tag_names)
         for i, name in enumerate(all_tag_names, 1):
             try:
                 snapshot, _ = create_tag(
@@ -559,10 +657,13 @@ async def _do_execute(
         seen_keys = set(existing_dedup)
         for idx, tx in enumerate(txs, 1):
             dedup_key = (tx.tx_type, f"{tx.amount}", tx.happened_at.isoformat())
-            stable_id = source_id(import_data.source_file_hash, tx.source_row_number) if compatible else None
-            duplicate = stable_id in existing_ids if compatible else dedup_key in seen_keys
-            if dedup_strategy == "skip_duplicates" and duplicate:
+            duplicate = dedup_key in seen_keys
+            reviewed = review_rows.get(tx.source_row_number)
+            should_skip = reviewed['action'] == 'skip' if reviewed else dedup_strategy == "skip_duplicates" and duplicate
+            if should_skip:
                 skipped += 1
+                if reviewed:
+                    stage_source(db, ledger, import_data, reviewed, reviewed['match_id'])
             else:
                 seen_keys.add(dedup_key)
                 tx_payload = _build_tx_payload(tx, auto_tags, actor_payload_base)
@@ -571,12 +672,8 @@ async def _do_execute(
                         pictures = [a for a in import_data.attachments if a.row_number == tx.source_row_number]
                         tx_payload['attachments'] = stage_attachments(db, ledger, user_id, pictures, created_paths)
                     snapshot, generated_id = create_transaction(snapshot, tx_payload)
-                    if stable_id and dedup_strategy == 'skip_duplicates':
-                        for item in snapshot['items']:
-                            if item.get('syncId') == generated_id:
-                                item['syncId'] = stable_id
-                                break
-                        existing_ids.add(stable_id)
+                    if reviewed:
+                        stage_source(db, ledger, import_data, reviewed, generated_id)
                 except (KeyError, ValueError, PermissionError) as exc:
                     raise _ImportFailed(
                         code="WRITE_TX_FAILED",
@@ -798,9 +895,11 @@ def _build_summary(
         extra_tag_names=auto_tag_names,
     )
 
-    if data.source_format == 'baishi_aa':
-        ids = {item.get('syncId') for item in snapshot.get('items', [])} if target_ledger_ext_id else set()
-        stats.skipped_dedup = sum(source_id(data.source_file_hash, tx.source_row_number) in ids for tx in txs)
+    if data.source_format == 'baishi_aa' and not errors:
+        entry = get_token_data(token=token, user_id=current_user.id)
+        if entry is not None:
+            plan = _review_plan(db, entry, txs, ledger)
+            stats.skipped_dedup = plan['counts']['skip']
 
     sample = [r.cells for r in data.rows[:5]]
     sample_txs = [_tx_to_payload(tx) for tx in txs[:10]]

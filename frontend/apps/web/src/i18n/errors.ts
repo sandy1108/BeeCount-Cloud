@@ -3,6 +3,9 @@ import { ApiError } from '@beecount/api-client'
 
 
 const ERROR_KEYS: Record<string, string> = {
+  IMPORT_REVIEW_REQUIRED: 'import.review.title',
+  IMPORT_REVIEW_STALE: 'import.review.stale',
+  IMPORT_REVIEW_UNRESOLVED: 'import.review.unresolved',
   AUTH_INVALID_CREDENTIALS: 'error.AUTH_INVALID_CREDENTIALS',
   INTERNAL_ERROR: 'error.INTERNAL_ERROR',
   WRITE_CONFLICT: 'error.WRITE_CONFLICT',

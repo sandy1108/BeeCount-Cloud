@@ -245,3 +245,32 @@ export async function* streamExecuteImport(
 export async function cancelImport(token: string, importToken: string): Promise<void> {
   await authedDelete(`/import/${encodeURIComponent(importToken)}`, token)
 }
+
+/** 百事AA核对结果：原始来源字段只留服务端，按页返回核对所需内容。 */
+export type ImportReviewChoice = { action: 'insert' | 'skip'; match_id?: string | null }
+export type ImportReviewTransaction = {
+  tx_type: string; amount: string; happened_at: string; note: string | null
+  category_name: string | null; account_name: string | null
+}
+export type ImportReviewRow = {
+  row_number: number
+  kind: 'new' | 'matched' | 'review'
+  reason: 'new' | 'same_file' | 'content' | 'similar'
+  action: 'insert' | 'skip' | null
+  match_id: string | null
+  incoming: ImportReviewTransaction
+  candidates: Array<ImportReviewTransaction & { sync_id: string }>
+  candidate_count: number
+}
+export type ImportReview = {
+  revision: string
+  counts: { new: number; matched: number; review: number; insert: number; skip: number; unresolved: number }
+  items: ImportReviewRow[]
+  offset: number; limit: number; total: number
+}
+export async function reviewImport(
+  token: string, importToken: string,
+  options: { revision?: string; decisions?: Record<string, ImportReviewChoice>; confirm?: boolean; offset?: number; limit?: number } = {},
+): Promise<ImportReview> {
+  return authedPost(`/import/${encodeURIComponent(importToken)}/review`, token, options)
+}

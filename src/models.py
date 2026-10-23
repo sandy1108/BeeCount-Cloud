@@ -800,3 +800,22 @@ class BackupRunTarget(Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     bytes_transferred: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ImportSourceRecord(Base):
+    """导入来源与目标交易的关联；保留原始依据，不随用户修改账单而改变。"""
+
+    __tablename__ = "import_source_records"
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    ledger_id: Mapped[str] = mapped_column(ForeignKey("ledgers.id", ondelete="CASCADE"), index=True)
+    source_format: Mapped[str] = mapped_column(String(32), default="baishi_aa")
+    file_hash: Mapped[str] = mapped_column(String(64))
+    row_number: Mapped[int] = mapped_column(Integer)
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    source_payload: Mapped[dict] = mapped_column(JSON)
+    transaction_sync_id: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    __table_args__ = (
+        UniqueConstraint("ledger_id", "file_hash", "row_number", "transaction_sync_id", name="uq_import_source_link"),
+        Index("ix_import_source_fingerprint", "ledger_id", "fingerprint"),
+    )

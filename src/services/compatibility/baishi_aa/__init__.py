@@ -104,6 +104,7 @@ def parse(payload: bytes, rows: list[list[str]], sheet_count: int) -> ImportData
             continue
         values = (row + [""] * 17)[:17]
         cells = dict(zip(COLUMNS, values, strict=True))
+        data.source_records[n] = dict(cells)
         data.rows.append(ParsedRow(n, cells, ""))
         names.add(cells["账本名称"])
         try:

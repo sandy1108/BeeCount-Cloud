@@ -135,6 +135,13 @@ def upload(client, token, payload, ledger=None):
 
 
 def execute(client, token, key):
+    # 兼容导入现在必须经过显式核对，保留本文件原有执行与回滚断言。
+    headers = {"Authorization": f"Bearer {token}"}
+    plan = client.post(f"/api/v1/import/{key}/review", json={}, headers=headers)
+    if plan.status_code == 200:
+        confirmed = client.post(f"/api/v1/import/{key}/review",
+                                json={"revision": plan.json()["revision"], "confirm": True}, headers=headers)
+        assert confirmed.status_code == 200, confirmed.text
     r = client.post(f"/api/v1/import/{key}/execute", headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200, r.text
     return r.text

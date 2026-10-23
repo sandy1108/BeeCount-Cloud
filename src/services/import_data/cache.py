@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -31,6 +31,9 @@ class _Entry:
     created_at: float
     new_ledger_name: str | None = None
     executing: bool = False
+    review_revision: str | None = None
+    review_base_revision: str | None = None
+    review_decisions: dict = field(default_factory=dict)
 
 
 # 防御并发:upload / preview / execute 都可能同时碰到这张表

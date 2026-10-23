@@ -16,6 +16,7 @@ import {
   streamExecuteImport,
 } from '@beecount/api-client'
 
+import { localizeError } from '../../i18n/errors'
 import { useAuth } from '../../context/AuthContext'
 
 type StageProgress = {
@@ -67,7 +68,7 @@ export function ImportProgressDialog({ open, importToken, onClose, onSuccess }: 
           setErrorData({
             code: 'IMPORT_NETWORK',
             row_number: 0,
-            message: err instanceof Error ? err.message : String(err),
+            message: localizeError(err, t),
           })
         }
       }

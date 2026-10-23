@@ -27,6 +27,7 @@ import {
 import { ImportSourceCard, type ImportEntry } from '../../components/import/ImportSourceCard'
 import { FieldMappingDialog } from '../../components/import/FieldMappingDialog'
 import { FileDropZone } from '../../components/import/FileDropZone'
+import { ImportReviewDialog } from '../../components/import/ImportReviewDialog'
 import { ImportProgressDialog } from '../../components/import/ImportProgressDialog'
 import { ImportStatsCard } from '../../components/import/ImportStatsCard'
 import { TransactionsPreviewCard } from '../../components/import/TransactionsPreviewCard'
@@ -57,6 +58,8 @@ export function ImportPage() {
   const [phase, setPhase] = useState<Phase>('idle')
   const [summary, setSummary] = useState<ImportSummary | null>(null)
   const [executeOpen, setExecuteOpen] = useState(false)
+  const [reviewOpen, setReviewOpen] = useState(false)
+  const [executeSucceeded, setExecuteSucceeded] = useState(false)
   const [mappingDialogOpen, setMappingDialogOpen] = useState(false)
 
   const initialLedger = searchParams.get('ledger') || ''
@@ -120,6 +123,7 @@ export function ImportPage() {
 
   const handleExecute = () => {
     if (!summary) return
+    setExecuteSucceeded(false)
     if (!summary.target_ledger_id && !summary.new_ledger_name) {
       toast.error(t('import.exec.needLedger'))
       return
@@ -128,12 +132,17 @@ export function ImportPage() {
       toast.error(t('import.exec.fixErrorsFirst'))
       return
     }
+    if (summary.source_format === 'baishi_aa') {
+      setReviewOpen(true)
+      return
+    }
     setExecuteOpen(true)
     setPhase('executing')
   }
 
   const onSuccess = useCallback(
     async (data: { created_tx_count: number; skipped_count: number; ledger_id?: string }) => {
+      setExecuteSucceeded(true)
       // 先刷新列表再选中新账本，避免账本校正逻辑用旧列表覆盖新选择。
       try {
         await refreshLedgers()
@@ -345,7 +354,7 @@ export function ImportPage() {
                   summary.stats.parse_errors_total > 0
                 }
               >
-                {t('import.exec.button', { count: summary.stats.total_rows })}
+                {summary.source_format === 'baishi_aa' ? t('import.review.open') : t('import.exec.button', { count: summary.stats.total_rows })}
               </Button>
             </div>
           </div>
@@ -362,14 +371,19 @@ export function ImportPage() {
         </>
       ) : null}
 
+      {summary ? <ImportReviewDialog
+        open={reviewOpen} token={token} importToken={summary.import_token}
+        insertAll={summary.dedup_strategy === 'insert_all'}
+        onClose={() => setReviewOpen(false)}
+        onConfirm={() => { setReviewOpen(false); setExecuteOpen(true); setPhase('executing') }}
+      /> : null}
       <ImportProgressDialog
         open={executeOpen}
         importToken={summary?.import_token || null}
         onClose={() => {
           setExecuteOpen(false)
-          if (phase === 'executing') {
-            navigate('/app/transactions')
-          }
+          if (executeSucceeded) navigate('/app/transactions')
+          else setPhase('preview')
         }}
         onSuccess={onSuccess}
       />
