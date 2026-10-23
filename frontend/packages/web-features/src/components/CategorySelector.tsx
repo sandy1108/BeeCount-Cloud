@@ -220,7 +220,7 @@ function CategoryCell({
             selected
               ? 'bg-primary/15 text-primary ring-2 ring-primary/60'
               : 'bg-muted/60 text-foreground group-hover:bg-accent/60'
-          } ${expanded ? 'ring-1 ring-primary/40' : ''}`}
+          } ${expanded ? 'ring-[3px] ring-primary' : ''}`}
         >
           <CategoryIcon
             icon={category.icon}

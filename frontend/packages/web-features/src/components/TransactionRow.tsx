@@ -98,7 +98,7 @@ export function TransactionRow({
   const sign = row.tx_type === 'expense' ? '-' : row.tx_type === 'income' ? '+'
     : transferOut !== transferIn ? (transferOut ? '-' : '+') : ''
   // 交易级多币种:折算快照存在且 ≠ 原币值 → 外币交易,金额旁标币种 + ≈ 折算行。
-  // 同币种交易 native === amount 恒成立,自然不显示;无需引入账本本位币 prop。
+  // 折算提示仍仅用于外币；主金额的币种符号不再依赖是否需要折算。
   const isForeignCurrency =
     !!row.currency_code &&
     row.native_amount != null &&
@@ -266,12 +266,12 @@ export function TransactionRow({
                 : 'text-foreground'
           } ${isCompact ? 'text-sm' : 'text-base'}`}>
             {sign}
-            {/* 外币显示其币种符号(JP¥/US$…,与本位币一眼区分);本位币维持纯数字 */}
-            {isForeignCurrency ? currencySymbol(row.currency_code as string) : ''}
             {row.amount.toLocaleString('zh-CN', {
               minimumFractionDigits: 2,
               maximumFractionDigits: 2
             })}
+            {/* 币种放在金额之后；历史数据缺少币种时不猜测，避免误标货币。 */}
+            {row.currency_code ? ` ${currencySymbol(row.currency_code)}` : ''}
           </span>
         </div>
 
