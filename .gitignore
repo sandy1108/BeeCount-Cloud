@@ -2,6 +2,9 @@
 .docs/
 .env
 .env.local
+# 私有实例配置不得提交；保留无凭据的公共配置示例。
+.env.*
+!.env.example
 .venv/
 __pycache__/
 *.pyc
