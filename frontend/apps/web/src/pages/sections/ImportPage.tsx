@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Pencil } from 'lucide-react'
+import { ArchiveRestore, ArrowLeft, FileSpreadsheet, Pencil } from 'lucide-react'
 
 import {
   Button,
@@ -12,6 +12,8 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  TabsList,
+  TabsTrigger,
   useT,
   useToast,
 } from '@beecount/ui'
@@ -22,7 +24,7 @@ import {
   uploadImport,
 } from '@beecount/api-client'
 
-import { BaishiImportCard } from '../../components/import/BaishiImportCard'
+import { ImportSourceCard, type ImportEntry } from '../../components/import/ImportSourceCard'
 import { FieldMappingDialog } from '../../components/import/FieldMappingDialog'
 import { FileDropZone } from '../../components/import/FileDropZone'
 import { ImportProgressDialog } from '../../components/import/ImportProgressDialog'
@@ -50,6 +52,7 @@ export function ImportPage() {
   const { ledgers, refreshLedgers, setActiveLedgerId } = useLedgers()
   const [searchParams] = useSearchParams()
 
+  const [entry, setEntry] = useState<ImportEntry>('standard')
   const [newName, setNewName] = useState('')
   const [phase, setPhase] = useState<Phase>('idle')
   const [summary, setSummary] = useState<ImportSummary | null>(null)
@@ -66,6 +69,8 @@ export function ImportPage() {
           file,
           targetLedgerId: initialLedger || null,
         })
+        // 文件识别结果决定预览所属入口，避免标题与实际解析格式不一致。
+        setEntry(sum.source_format === 'baishi_aa' ? 'baishi' : 'standard')
         setSummary(sum)
         setNewName(sum.source_ledger_name || '')
         setPhase('preview')
@@ -167,12 +172,36 @@ export function ImportPage() {
         <h1 className="text-lg font-semibold">{t('import.pageTitle')}</h1>
       </div>
 
-      <BaishiImportCard summary={summary} />
+      <TabsList role="group" aria-label={t('import.entry.label')} className="grid grid-cols-2 gap-1 rounded-xl border border-border/60 bg-muted/50 p-1.5">
+        {(['standard', 'baishi'] as const).map((value) => {
+          const Icon = value === 'standard' ? ArchiveRestore : FileSpreadsheet
+          return <TabsTrigger
+            key={value}
+            active={entry === value}
+            aria-pressed={entry === value}
+            className="justify-center gap-2 rounded-lg px-2 py-3 text-xs sm:text-sm"
+            disabled={phase === 'uploading' || phase === 'executing'}
+            onClick={() => {
+              if (entry === value) return
+              // 切换只清空未执行的预览，不写入或删除账本数据。
+              setEntry(value)
+              setSummary(null)
+              setNewName('')
+              setMappingDialogOpen(false)
+              setPhase('idle')
+            }}
+          >
+            <Icon className="h-4 w-4 shrink-0" />
+            {t(value === 'standard' ? 'import.entry.standard' : 'import.entry.baishi')}
+          </TabsTrigger>
+        })}
+      </TabsList>
+      <ImportSourceCard entry={entry} summary={summary} />
 
       {phase === 'idle' || (phase === 'uploading' && !summary) ? (
         <Card className="bc-panel">
           <CardContent className="space-y-3 p-6">
-            <FileDropZone onSelect={handleSelectFile} disabled={phase === 'uploading'} />
+            <FileDropZone onSelect={handleSelectFile} disabled={phase === 'uploading'} accept={entry === 'baishi' ? '.xlsx' : '.csv,.tsv,.xlsx'} />
             {phase === 'uploading' ? (
               <p className="text-center text-xs text-muted-foreground">
                 {t('import.uploading')}

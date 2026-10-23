@@ -664,6 +664,13 @@ const zhCN = {
   'cmdk.action.importLedger': '导入账本数据',
 
   // 账本导入页 — .docs/web-ledger-import.md
+  'import.entry.label': '选择导入方式',
+  'import.entry.standard': '原有账单导入',
+  'import.entry.baishi': '百事AA兼容导入',
+  'import.entry.standardDescription': '导入蜜蜂记账导出的账单，或使用 CSV、TSV、Excel 表格，在预览中核对字段映射。',
+  'import.entry.standardScope': '保留原有格式支持与字段映射流程，确认目标账本后再写入。',
+  'import.entry.categories': '二级分类映射',
+  'import.entry.images': '嵌入图片',
   'import.baishi.title': '百事AA账单迁移',
   'import.baishi.description': '上传百事AA导出的 Excel，核对后导入蜜蜂记账。',
   'import.baishi.source': '源账本：{name}',

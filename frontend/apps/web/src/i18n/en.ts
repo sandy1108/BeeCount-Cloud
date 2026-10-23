@@ -153,6 +153,13 @@ const en = {
   'cmdk.action.importLedger': 'Import ledger data',
 
   // Ledger import
+  'import.entry.label': 'Choose an import method',
+  'import.entry.standard': 'Standard import',
+  'import.entry.baishi': 'Baishi AA import',
+  'import.entry.standardDescription': 'Import a BeeCount export or a CSV, TSV, or Excel file, then review the field mapping before importing.',
+  'import.entry.standardScope': 'Uses the existing formats and field mapping workflow. Confirm the target ledger before saving.',
+  'import.entry.categories': 'Subcategory mapping',
+  'import.entry.images': 'Embedded images',
   'import.baishi.title': 'Import from Baishi AA',
   'import.baishi.description': 'Upload a Baishi AA Excel export, review it, and import into BeeCount.',
   'import.baishi.source': 'Source ledger: {name}',

@@ -120,6 +120,13 @@ const zhTW = {
   'cmdk.action.importLedger': '匯入帳本資料',
 
   // 帳本匯入
+  'import.entry.label': '選擇匯入方式',
+  'import.entry.standard': '原有帳單匯入',
+  'import.entry.baishi': '百事AA相容匯入',
+  'import.entry.standardDescription': '匯入蜜蜂記帳匯出的帳單，或使用 CSV、TSV、Excel 表格，在預覽中核對欄位對應。',
+  'import.entry.standardScope': '保留原有格式支援與欄位對應流程，確認目標帳本後再寫入。',
+  'import.entry.categories': '二級分類對應',
+  'import.entry.images': '嵌入圖片',
   'import.baishi.title': '百事AA帳單遷移',
   'import.baishi.description': '上傳百事AA匯出的 Excel，核對後匯入蜜蜂記帳。',
   'import.baishi.source': '來源帳本：{name}',
