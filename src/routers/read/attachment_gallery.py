@@ -15,6 +15,7 @@ from ...database import get_db
 from ...deps import get_current_user
 from ...models import AttachmentFile, ReadTxProjection, User
 from ._shared import _READ_SCOPE_DEP, _require_ledger, _to_utc, router
+from .category_filter import category_filter
 
 
 class GalleryAttachmentOut(BaseModel):
@@ -81,7 +82,7 @@ def list_gallery_attachments(
     if date_to is not None:
         query = query.where(refs.c.happened_at < date_to)
     if category_sync_id:
-        query = query.where(refs.c.category_sync_id == category_sync_id)
+        query = query.where(category_filter(db, category_sync_id, current_user.id, refs.c))
     if q and q.strip():
         pattern = "%" + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
         query = query.where(or_(*[

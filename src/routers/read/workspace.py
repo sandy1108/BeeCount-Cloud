@@ -13,6 +13,7 @@ from sqlalchemy import false as sa_false
 
 from ._shared import *  # noqa: F401,F403 — imports + helpers + router
 from ...models import ExchangeRateCache, UserExchangeRateProjection
+from .category_filter import category_filter
 
 # ---------------------------------------------------------------------------
 # 净值历史 — 响应 schema
@@ -92,7 +93,9 @@ def list_workspace_transactions(
             ReadTxProjection.tag_sync_ids_json.like(f'%"{tag_sync_id}"%')
         )
     if category_sync_id:
-        query = query.where(ReadTxProjection.category_sync_id == category_sync_id)
+        query = query.where(category_filter(
+            db, category_sync_id, user_id if (is_admin and user_id) else current_user.id,
+        ))
     if account_sync_id:
         query = query.where(or_(
             ReadTxProjection.account_sync_id == account_sync_id,
@@ -395,7 +398,9 @@ def export_workspace_transactions_csv(
                 ReadTxProjection.tag_sync_ids_json.like(f'%"{tag_sync_id}"%')
             )
         if category_sync_id:
-            query = query.where(ReadTxProjection.category_sync_id == category_sync_id)
+            query = query.where(category_filter(
+                db, category_sync_id, user_id if (is_admin and user_id) else current_user.id,
+            ))
         if account_sync_id:
             query = query.where(or_(
                 ReadTxProjection.account_sync_id == account_sync_id,
@@ -754,6 +759,11 @@ def list_workspace_categories(
                 tx_count_by_sync_id[sid] += int(row[1] or 0)
 
     all_categories: list[WorkspaceCategoryOut] = []
+    # 转账虚拟分类按交易类型计数，与详情、导出及附件筛选保持相同口径。
+    transfer_count = int(db.scalar(select(func.count()).select_from(ReadTxProjection).where(
+        ReadTxProjection.ledger_id.in_(ledger_internal_ids),
+        ReadTxProjection.tx_type == "transfer",
+    )) or 0)
     for cat in db.scalars(cat_query).all():
         name = (cat.name or "").strip()
         if not name:
@@ -779,7 +789,8 @@ def list_workspace_categories(
                 ledger_name="",
                 created_by_user_id=target_user_id,
                 created_by_email=target_email,
-                tx_count=tx_count_by_sync_id.get(sync_id, 0) if sync_id else 0,
+                tx_count=(transfer_count if kind == "transfer"
+                          else tx_count_by_sync_id.get(sync_id, 0) if sync_id else 0),
             )
         )
 
