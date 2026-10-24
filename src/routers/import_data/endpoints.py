@@ -61,6 +61,7 @@ from ...services.import_data.cache import (
     save_token_data,
     update_token,
 )
+from ...services.import_data.category_links import resolve_category_id
 from ...services.import_data.execution_support import stage_attachments, stage_ledger
 from ...services.import_data.stats import build_existing_sets, compute_stats
 from ...snapshot_mutator import (
@@ -744,6 +745,12 @@ async def _do_execute(
                 seen_keys.add(dedup_key)
                 tx_payload = _build_tx_payload(tx, auto_tags, actor_payload_base)
                 try:
+                    # 分类已创建，必须把实际 syncId 写入交易，供统计、筛选及同步使用。
+                    if tx.category_name and tx.tx_type != "transfer":
+                        tx_payload["category_id"] = resolve_category_id(
+                            snapshot.get("categories") or [], tx.category_name,
+                            tx.tx_type, tx.parent_category_name,
+                        )
                     if import_data is not None:
                         pictures = [a for a in import_data.attachments if a.row_number == tx.source_row_number]
                         tx_payload['attachments'] = stage_attachments(db, ledger, user_id, pictures, created_paths)
