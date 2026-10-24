@@ -241,6 +241,8 @@ class Ledger(Base):
     # mobile Drift 列 ledgers.month_start_day,sync payload key `monthStartDay`。
     # 口径与决策见 BeeCount 仓 .docs/period-start-date/design.md。
     month_start_day: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
+    # 统计展示模式独立于个人/共享类型；旧客户端不传该字段时保持原值。
+    statistics_mode: Mapped[str] = mapped_column(String(24), default="standard", server_default="standard")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     changes: Mapped[list["SyncChange"]] = relationship(back_populates="ledger")

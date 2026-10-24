@@ -585,8 +585,12 @@ def apply_change_to_projection(
         new_name = payload_raw.get("ledgerName")
         new_currency = payload_raw.get("currency")
         new_month_start_day = payload_raw.get("monthStartDay")
+        new_statistics_mode = payload_raw.get("statisticsMode")
         ledger_row = db.scalar(select(Ledger).where(Ledger.id == ledger_id))
         if ledger_row is not None:
+            # 旧手机会省略未知字段；缺省或非法值绝不重置服务端设置。
+            if new_statistics_mode in ("standard", "ski_season"):
+                ledger_row.statistics_mode = new_statistics_mode
             if isinstance(new_name, str) and new_name.strip():
                 ledger_row.name = new_name.strip()
             if isinstance(new_currency, str) and new_currency.strip():

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import statistics as _stats
 
+from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy import false as sa_false
 
@@ -996,6 +997,10 @@ def workspace_analytics(
         db, current_user=current_user, is_admin=is_admin,
         ledger_id=ledger_id, user_id=user_id,
     )
+    if scope == "ski_season" and (
+        not ledger_id or len(ledgers) != 1 or ledgers[0].statistics_mode != "ski_season"
+    ):
+        raise HTTPException(status_code=400, detail="Ski season requires a visible ski-season ledger")
     # 单账本视图用该账本的自定义起始日;多账本聚合维持自然月(各账本周期可能
     # 不同无法对齐)。natural_month=true 强制自然月(日历网格等按公历的消费方,D6)。
     month_start_day = (

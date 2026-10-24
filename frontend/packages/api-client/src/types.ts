@@ -138,12 +138,14 @@ export type LedgerCreatePayload = {
   ledger_id?: string | null
   ledger_name: string
   currency?: string | null
+  statistics_mode?: 'standard' | 'ski_season'
   month_start_day?: number | null
 }
 
 export type LedgerMetaPayload = {
   ledger_name?: string | null
   currency?: string | null
+  statistics_mode?: 'standard' | 'ski_season'
   month_start_day?: number | null
 }
 
@@ -151,6 +153,7 @@ export type ReadLedger = {
   ledger_id: string
   ledger_name: string
   currency: string
+  statistics_mode?: 'standard' | 'ski_season'
   month_start_day?: number
   transaction_count: number
   income_total: number
@@ -336,7 +339,7 @@ export type WorkspaceTag = ReadTag & {
   income_total?: number | null
 }
 
-export type AnalyticsScope = 'month' | 'year' | 'all'
+export type AnalyticsScope = 'month' | 'year' | 'all' | 'ski_season'
 export type AnalyticsMetric = 'expense' | 'income' | 'balance'
 
 export type WorkspaceLedgerCounts = {

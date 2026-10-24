@@ -508,6 +508,8 @@ def _bucket_key(
     normalized = _to_utc(happened_at)
     # 偏移到用户本地时区(naive 化),strftime 就是本地日期
     local = normalized + timedelta(minutes=tz_offset_minutes)
+    if scope == "ski_season":
+        return local.strftime("%Y-%m")
     if scope == "month":
         return local.strftime("%Y-%m-%d")
     day = _clamp_month_start_day(month_start_day)
@@ -541,6 +543,10 @@ def _analytics_range(
 
     now = datetime.now(timezone.utc)
     tz = timezone(timedelta(minutes=tz_offset_minutes))
+
+    if scope == "ski_season":
+        from ...services.statistics_period import ski_season_range
+        return ski_season_range(period=period, tz_offset_minutes=tz_offset_minutes)
 
     if scope == "all":
         return None, None, None

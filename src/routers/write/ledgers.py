@@ -51,6 +51,7 @@ async def create_ledger(
         name=name,
         currency=currency,
         month_start_day=req.month_start_day,
+        statistics_mode=req.statistics_mode,
     )
     db.add(ledger)
     db.flush()
@@ -73,7 +74,7 @@ async def create_ledger(
         entity_type="ledger",
         entity_sync_id=external_id,
         action="upsert",
-        payload_json={"ledgerName": name, "currency": currency, "monthStartDay": req.month_start_day},
+        payload_json={"ledgerName": name, "currency": currency, "monthStartDay": req.month_start_day, "statisticsMode": req.statistics_mode},
         updated_at=now,
         updated_by_device_id="web-console",
         updated_by_user_id=current_user.id,
@@ -218,14 +219,19 @@ async def update_ledger_meta(
             new_month_start_day = payload["month_start_day"]
             next_snapshot["monthStartDay"] = new_month_start_day
             ledger.month_start_day = new_month_start_day
+        if payload.get("statistics_mode") is not None:
+            ledger.statistics_mode = payload["statistics_mode"]
+            next_snapshot["statisticsMode"] = ledger.statistics_mode
         # 显式 emit ledger meta change(action=upsert,跟 create_ledger 同款
         # payload 字段)。mobile _applyLedgerChange 用 ledgerName/currency/
         # monthStartDay 写本地 ledgers 表。
-        if new_name is not None or new_currency is not None or new_month_start_day is not None:
+        if (new_name is not None or new_currency is not None or new_month_start_day is not None
+                or payload.get("statistics_mode") is not None):
             change_payload: dict = {}
             change_payload["ledgerName"] = ledger.name
             change_payload["currency"] = ledger.currency
             change_payload["monthStartDay"] = ledger.month_start_day or 1
+            change_payload["statisticsMode"] = ledger.statistics_mode or "standard"
             row_change = SyncChange(
                 user_id=current_user.id,
                 ledger_id=ledger.id,

@@ -482,6 +482,7 @@ class ReadLedgerOut(BaseModel):
     ledger_name: str
     currency: str
     month_start_day: int = 1
+    statistics_mode: Literal["standard", "ski_season"] = "standard"
     transaction_count: int
     income_total: float
     expense_total: float
@@ -666,7 +667,7 @@ class WorkspaceTagOut(ReadTagOut):
     income_total: float | None = None
 
 
-AnalyticsScope = Literal["month", "year", "all"]
+AnalyticsScope = Literal["month", "year", "all", "ski_season"]
 AnalyticsMetric = Literal["expense", "income", "balance"]
 
 
@@ -782,12 +783,14 @@ class WriteLedgerCreateRequest(BaseModel):
     ledger_name: str = Field(min_length=1, max_length=255)
     currency: str = Field(default="CNY", min_length=1, max_length=16)
     month_start_day: int = Field(default=1, ge=1, le=28)
+    statistics_mode: Literal["standard", "ski_season"] = "standard"
 
 
 class WriteLedgerMetaUpdateRequest(WriteBaseRequest):
     ledger_name: str | None = Field(default=None, min_length=1, max_length=255)
     currency: str | None = Field(default=None, min_length=1, max_length=16)
     month_start_day: int | None = Field(default=None, ge=1, le=28)
+    statistics_mode: Literal["standard", "ski_season"] | None = None
 
 
 class WriteTransactionCreateRequest(WriteBaseRequest):
