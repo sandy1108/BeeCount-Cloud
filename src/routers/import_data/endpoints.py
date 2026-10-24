@@ -13,16 +13,27 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ... import snapshot_builder
 from ...concurrency import lock_ledger_for_materialize
 from ...database import get_db
 from ...deps import get_current_user
-from ...models import AuditLog, Ledger, User
+from ...models import AuditLog, Ledger, LedgerMember, User
 from ...routers.write._shared import (
     _TRANSACTION_WRITE_ROLES,
     _WRITE_SCOPE_DEP,
@@ -278,6 +289,59 @@ async def upload_import(
     return summary
 
 
+@router.get("/history")
+async def import_history(
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=10, ge=1, le=50),
+    _scopes: set[str] = Depends(_WRITE_SCOPE_DEP),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """只展示本人成功导入且当前仍可写的账本；撤权/删账本后不泄露历史金额。"""
+    accessible = or_(
+        Ledger.user_id == current_user.id,
+        select(LedgerMember.ledger_id)
+        .where(
+            LedgerMember.ledger_id == Ledger.id,
+            LedgerMember.user_id == current_user.id,
+            LedgerMember.role.in_(_TRANSACTION_WRITE_ROLES),
+        )
+        .exists(),
+    )
+    conditions = (
+        AuditLog.user_id == current_user.id,
+        AuditLog.action == "web_import_csv",
+        accessible,
+    )
+    base = select(AuditLog, Ledger).join(Ledger, AuditLog.ledger_id == Ledger.id).where(*conditions)
+    total = db.scalar(select(func.count()).select_from(base.subquery()))
+    rows = db.execute(
+        base.order_by(AuditLog.created_at.desc(), AuditLog.id.desc()).offset(offset).limit(limit)
+    ).all()
+    return {
+        "offset": offset,
+        "limit": limit,
+        "total": total,
+        "items": [
+            {
+                "id": audit.id,
+                "created_at": audit.created_at.replace(tzinfo=timezone.utc).isoformat()
+                if audit.created_at.tzinfo is None
+                else audit.created_at.isoformat(),
+                "ledger_id": ledger.external_id,
+                "ledger_name": ledger.name,
+                "result": "success",
+                "source_format": audit.metadata_json.get("sourceFormat"),
+                "file_hash": audit.metadata_json.get("sourceFileHash"),
+                "created_count": audit.metadata_json.get("createdTxCount", 0),
+                "skipped_count": audit.metadata_json.get("skippedCount", 0),
+                "report": audit.metadata_json.get("reconciliation"),
+            }
+            for audit, ledger in rows
+        ],
+    }
+
+
 # ──────────── preview ────────────
 
 
@@ -352,10 +416,18 @@ class ReviewChoice(BaseModel):
     match_id: str | None = None
 
 
+class CandidateQuery(BaseModel):
+    search: str = Field(default="", max_length=200)
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=20, ge=1, le=50)
+
+
 class ReviewRequest(BaseModel):
     revision: str | None = None
     decisions: dict[str, ReviewChoice] = Field(default_factory=dict, max_length=50_000)
     confirm: bool = False
+    unresolved_only: bool = False
+    candidate_queries: dict[str, CandidateQuery] = Field(default_factory=dict, max_length=100)
     offset: int = Field(default=0, ge=0)
     limit: int = Field(default=25, ge=1, le=100)
 
@@ -412,7 +484,8 @@ async def review_import(
         if plan['counts']['unresolved']:
             raise HTTPException(409, detail={'error_code': 'IMPORT_REVIEW_UNRESOLVED'})
         entry.review_revision = plan['revision']
-    return public_review(plan, req.offset, req.limit)
+    return public_review(plan, req.offset, req.limit, req.unresolved_only,
+                         {k: v.model_dump() for k, v in req.candidate_queries.items()})
 
 
 # ──────────── execute(SSE) ────────────
@@ -728,6 +801,11 @@ async def _do_execute(
                     "newTagsCount": len(all_tag_names),
                     "dedupStrategy": dedup_strategy,
                     "autoTagNames": auto_tags,
+                    "reconciliation": {
+                        "version": 1, "currency": plan["currency"],
+                        "source_ledger_name": import_data.source_ledger_name,
+                        "amounts": plan["amounts"],
+                    } if compatible else None,
                     "sourceFormat": import_data.source_format if import_data else None,
                     "sourceFileHash": import_data.source_file_hash if import_data else None,
                 },
@@ -936,6 +1014,7 @@ def _tx_to_payload(tx) -> dict:
     return {
         "tx_type": tx.tx_type,
         "amount": str(tx.amount),
+        "currency_code": tx.currency_code,
         "happened_at": tx.happened_at.isoformat(),
         "note": tx.note,
         "category_name": tx.category_name,

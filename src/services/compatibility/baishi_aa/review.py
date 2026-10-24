@@ -180,11 +180,9 @@ def build_review(db, entry, txs, ledger, snapshot, decisions=None) -> dict:
                 row["kind"] = "review"
                 if row["reason"] != "near_time":
                     row["reason"] = "similar"
-        # 限制候选展示数量；明确显示总数，不自动选择未展示的记录。
+        # 全部候选ID只留服务端；公开响应按页生成，人工选择仍校验完整集合。
+        row["_candidate_ids"] = ids
         row["candidate_count"] = len(ids)
-        row["candidates"] = [
-            {**candidate(live[i]), "currency_code": currency(live[i])} for i in ids[:20]
-        ]
         choice = choices.get(str(row["row_number"]))
         if choice:
             if choice["action"] == "skip":
@@ -214,19 +212,128 @@ def build_review(db, entry, txs, ledger, snapshot, decisions=None) -> dict:
             for kind, action in [("insert", "insert"), ("skip", "skip"), ("unresolved", None)]
         }
     )
-    return {"revision": revision, "counts": counts, "items": rows, "total": len(rows)}
-
-
-def public_review(plan, offset=0, limit=25):
-    """原始来源只存服务端，页面只返回核对需要的字段。"""
     return {
-        **plan,
+        "revision": revision,
+        "counts": counts,
+        "items": rows,
+        "total": len(rows),
+        "_live": live,
+        "currency": base_currency,
+        "target": {
+            "ledger_id": ledger.external_id if ledger else None,
+            "name": ledger.name if ledger else entry.new_ledger_name,
+        },
+        "amounts": reconciliation(rows),
+    }
+
+
+def reconciliation(rows):
+    """整份文件的原始收支口径；未决金额单列，绝不计入即将新增。"""
+    result = {}
+    for group in ("file", "insert", "skip", "unresolved"):
+        selected = (
+            rows
+            if group == "file"
+            else [
+                row for row in rows if row["action"] == (None if group == "unresolved" else group)
+            ]
+        )
+        result[group] = {"count": len(selected)}
+        for kind in ("income", "expense"):
+            result[group][kind] = str(
+                sum(
+                    (
+                        Decimal(row["incoming"]["amount"])
+                        for row in selected
+                        if row["incoming"]["tx_type"] == kind
+                    ),
+                    Decimal(0),
+                )
+            )
+    return result
+
+
+def _public_candidate(plan, row, item_id):
+    item = candidate(plan["_live"][item_id])
+    item["currency_code"] = item["currency_code"] or plan["currency"]
+    incoming = row["incoming"]
+    # 服务端按规范化金额与UTC时刻比较，避免字符串格式或浮点精度制造假差异。
+    differences = []
+    for field in (
+        "amount",
+        "happened_at",
+        "note",
+        "category_name",
+        "account_name",
+        "currency_code",
+    ):
+        old, new = item[field], incoming[field]
+        if field == "amount":
+            old, new = Decimal(old), Decimal(new)
+        elif field == "happened_at":
+            old, new = instant(old), instant(new)
+        else:
+            old, new = old or "", new or ""
+        if old != new:
+            differences.append(field)
+    item["differences"] = differences
+    return item
+
+
+def public_review(plan, offset=0, limit=25, unresolved_only=False, candidate_queries=None):
+    """分页/筛选仅改变显示；全文件计数、金额与确认门禁不受影响。"""
+    rows = [row for row in plan["items"] if not unresolved_only or row["action"] is None]
+    # 最后一项处理完后页数可能减少，回到仍然有效的最后一页。
+    offset = min(offset, max(0, (len(rows) - 1) // limit * limit))
+    items = []
+    for row in rows[offset : offset + limit]:
+        query = (candidate_queries or {}).get(str(row["row_number"]), {})
+        search = query.get("search", "").strip().casefold()
+        ids = row["_candidate_ids"]
+        if search:
+            ids = [
+                i
+                for i in ids
+                if search
+                in " ".join(str(v or "") for v in candidate(plan["_live"][i]).values()).casefold()
+            ]
+        candidate_offset, candidate_limit = query.get("offset", 0), query.get("limit", 20)
+        candidate_offset = min(
+            candidate_offset, max(0, (len(ids) - 1) // candidate_limit * candidate_limit)
+        )
+        items.append(
+            {
+                **{
+                    k: v
+                    for k, v in row.items()
+                    if not k.startswith("_")
+                    and k not in ("source_payload", "fingerprint", "candidates")
+                },
+                "candidates": [
+                    _public_candidate(plan, row, i)
+                    for i in ids[candidate_offset : candidate_offset + candidate_limit]
+                ],
+                "candidate_total": len(ids),
+                "candidate_offset": candidate_offset,
+                "candidate_limit": candidate_limit,
+                "candidate_search": query.get("search", ""),
+                "selected_candidate": _public_candidate(plan, row, row["match_id"])
+                if row["action"] == "skip"
+                else None,
+            }
+        )
+    return {
+        "revision": plan["revision"],
+        "counts": plan["counts"],
+        "amounts": plan["amounts"],
+        "currency": plan["currency"],
+        "target": plan["target"],
+        "total": len(rows),
+        "file_total": plan["total"],
+        "unresolved_only": unresolved_only,
         "offset": offset,
         "limit": limit,
-        "items": [
-            {k: v for k, v in row.items() if k not in ("source_payload", "fingerprint")}
-            for row in plan["items"][offset : offset + limit]
-        ],
+        "items": items,
     }
 
 
