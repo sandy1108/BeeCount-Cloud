@@ -18,11 +18,17 @@ import type {
 import { Amount, periodRangeText, type BudgetUsage } from '@beecount/web-features'
 import { useT } from '@beecount/ui'
 
+import { SkiSeasonControls } from './SkiSeasonControls'
+import { currentSkiSeason, seasonLabel } from '../../lib/skiSeason'
 import { HeroInsightsRow } from './HeroInsightsRow'
 
 type HeroScope = 'month' | 'year' | 'all'
 
 interface Props {
+  selectedScope?: HeroScope
+  onScopeChange?: (scope: HeroScope) => void
+  seasonYear?: number
+  onSeasonYearChange?: (year: number) => void
   ledgers: ReadLedger[]
   currentLedgerId?: string
   monthSummary?: WorkspaceAnalyticsSummary
@@ -52,6 +58,7 @@ const SCOPE_VALUES: HeroScope[] = ['month', 'year', 'all']
  * - 右侧 sparkline: month 按日累计；year / all 按月累计
  */
 export function HomeHero({
+  selectedScope, onScopeChange, seasonYear, onSeasonYearChange,
   ledgers,
   currentLedgerId,
   monthSummary,
@@ -67,7 +74,9 @@ export function HomeHero({
   hasEnoughMonthsForAnomaly
 }: Props) {
   const t = useT()
-  const [scope, setScope] = useState<HeroScope>('month')
+  const [localScope, setLocalScope] = useState<HeroScope>('month')
+  const scope = selectedScope ?? localScope
+  const setScope = onScopeChange ?? setLocalScope
 
   const activeLedger =
     ledgers.find((l) => l.ledger_id === currentLedgerId) || ledgers[0]
@@ -87,8 +96,12 @@ export function HomeHero({
 
   const activeSummary = summaryByScope[scope]
   const activeSeries = seriesByScope[scope]
-  const scopeLabel = t(`home.scope.${scope}`)
-  const scopeBalanceHint = t(`home.scope.${scope}.hint`)
+  const skiMode = activeLedger?.statistics_mode === 'ski_season'
+  const currentSeason = currentSkiSeason()
+  const selectedSeason = seasonYear ?? currentSeason
+  const scopeLabel = skiMode && scope === 'year' ? seasonLabel(selectedSeason, t('ski.suffix')) : t(`home.scope.${scope}`)
+  const scopeBalanceHint = skiMode && scope === 'year' ? `${scopeLabel} · ${t('ski.balance')}` : t(`home.scope.${scope}.hint`)
+  const seasonRange = skiMode && scope === 'year' ? `${selectedSeason}-10-01 ~ ${selectedSeason + 1}-04-30` : null
   const monthRangeLabel = scope === 'month' ? periodRangeText(ledgerMonthStartDay) : null
 
   const income = activeSummary?.income_total ?? 0
@@ -134,7 +147,7 @@ export function HomeHero({
       <div className="relative grid gap-4 p-4 sm:gap-5 sm:p-6 lg:grid-cols-[1.4fr_1fr]">
         <div className="min-w-0">
           {/* 顶部：账本名 + 三视角切换 */}
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="min-w-0">
               {/* flex-wrap + 分段 nowrap:窄屏被右侧切换器挤压时整段换行,
                   而不是 CJK 逐字断行(范围括号最多整体掉到第二行) */}
@@ -143,9 +156,9 @@ export function HomeHero({
                 <span className="whitespace-nowrap">
                   {t('home.scope.current')} · {scopeLabel}
                 </span>
-                {monthRangeLabel && (
+                {(monthRangeLabel || seasonRange) && (
                   <span className="whitespace-nowrap font-normal normal-case tracking-normal text-muted-foreground/70">
-                    ({monthRangeLabel})
+                    ({monthRangeLabel || seasonRange})
                   </span>
                 )}
               </div>
@@ -159,7 +172,10 @@ export function HomeHero({
               </div>
             </div>
             <div className="shrink-0">
-              <ScopeSwitcher value={scope} onChange={setScope} />
+              {skiMode ? <SkiSeasonControls scope={scope} currentYear={currentSeason} selectedYear={selectedSeason}
+                firstYear={Math.min(currentSeason - 5, ledgerCounts?.first_tx_at ? currentSkiSeason(new Date(ledgerCounts.first_tx_at)) : currentSeason)}
+                onScopeChange={setScope} onYearChange={onSeasonYearChange ?? (() => {})} />
+                : <ScopeSwitcher value={scope} onChange={setScope} />}
             </div>
           </div>
 

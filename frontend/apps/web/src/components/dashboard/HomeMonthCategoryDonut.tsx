@@ -8,6 +8,7 @@ interface Props {
   /** 本月支出类别排行（scope=month&metric=expense 返回的 category_ranks）。 */
   ranks: WorkspaceAnalyticsCategoryRank[]
   currency?: string
+  title?: string
 }
 
 /**
@@ -15,7 +16,7 @@ interface Props {
  * "其他"。参考 `AccountsPanel.AssetsCompositionMini`，同样风格避免引入 recharts
  * 分段饼图的多余依赖。
  */
-export function HomeMonthCategoryDonut({ ranks, currency = 'CNY' }: Props) {
+export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title }: Props) {
   const t = useT()
   const otherLabel = t('home.monthDonut.other')
   const { slices, total } = useMemo(() => {
@@ -60,7 +61,7 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY' }: Props) {
   return (
     <Card className="bc-panel overflow-hidden">
       <CardHeader className="flex flex-row items-end justify-between">
-        <CardTitle className="text-base">{t('home.monthDonut.title')}</CardTitle>
+        <CardTitle className="text-base">{title || t('home.monthDonut.title')}</CardTitle>
         <span className="text-[11px] text-muted-foreground">
           {t('home.monthDonut.total')}{' '}
           <Amount
@@ -76,7 +77,7 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY' }: Props) {
       <CardContent>
         {slices.length === 0 ? (
           <div className="flex h-48 items-center justify-center text-xs text-muted-foreground">
-            {t('home.monthDonut.empty')}
+            {title ? t('ski.noExpense') : t('home.monthDonut.empty')}
           </div>
         ) : (
           <div className="flex items-center gap-5">
@@ -89,7 +90,7 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY' }: Props) {
               <div className="absolute inset-[18%] rounded-full bg-card" aria-hidden />
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  {t('home.monthDonut.center')}
+                  {title ? t('ski.categories') : t('home.monthDonut.center')}
                 </div>
                 <Amount
                   value={total}

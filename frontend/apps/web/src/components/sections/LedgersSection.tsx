@@ -397,6 +397,7 @@ export type LedgerForm = {
   ledger_name: string
   currency: string
   month_start_day: number
+  statistics_mode: 'standard' | 'ski_season'
 }
 
 interface LedgerEditDialogProps {
@@ -492,6 +493,17 @@ export function LedgerEditDialog({
             <p className="text-xs text-muted-foreground">
               {t('ledgers.monthStartDay.hint')}
             </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="ledger-statistics-mode">{t('ski.setting')}</Label>
+            <select id="ledger-statistics-mode" name="statistics_mode"
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={form.statistics_mode}
+              onChange={(e) => onChange({ ...form, statistics_mode: e.target.value as LedgerForm['statistics_mode'] })}>
+              <option value="standard">{t('ski.standard')}</option>
+              <option value="ski_season">{t('ski.mode')}</option>
+            </select>
+            <p className="text-xs text-muted-foreground">{t('ski.settingHint')}</p>
           </div>
           {meta && meta.length > 0 ? (
             <div className="space-y-1 rounded-md border border-border/50 bg-muted/30 px-3 py-2 text-xs">

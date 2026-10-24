@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useT } from '@beecount/ui'
 
 import {
   fetchWorkspaceAccounts,
@@ -16,6 +17,7 @@ import {
 } from '@beecount/api-client'
 import { fetchBudgetsWithUsage, periodLabel, type BudgetUsage } from '@beecount/web-features'
 
+import { currentSkiSeason, fillSeasonSeries, type DashboardScope } from '../../lib/skiSeason'
 import { OverviewSection } from '../../components/sections/OverviewSection'
 import { useAuth } from '../../context/AuthContext'
 import { useLedgers } from '../../context/LedgersContext'
@@ -32,7 +34,28 @@ import { dispatchOpenDetailCategory } from '../../lib/txDialogEvents'
  * 静默降级:任何 analytics 子请求失败不阻塞其它卡片,dashboard 本身有空态。
  */
 export function OverviewPage() {
+  const { activeLedgerId, currentLedger } = useLedgers()
+  return <OverviewLedgerPage key={`${activeLedgerId}:${currentLedger?.statistics_mode ?? 'standard'}`} />
+}
+
+function OverviewLedgerPage() {
+  const { currentLedger } = useLedgers()
+  const [scope, setScope] = useState<DashboardScope>('month')
+  const [seasonYear, setSeasonYear] = useState(currentSkiSeason)
+  const skiMode = currentLedger?.statistics_mode === 'ski_season'
+  return <OverviewContent key={skiMode ? `${scope}:${seasonYear}` : 'standard'}
+    scope={scope} seasonYear={seasonYear}
+    onScopeChange={(value) => { if (value === 'year') setSeasonYear(currentSkiSeason()); setScope(value) }}
+    onSeasonYearChange={(year) => { setSeasonYear(year); setScope('year') }} />
+}
+
+function OverviewContent({ scope, seasonYear, onScopeChange, onSeasonYearChange }: {
+  scope: DashboardScope; seasonYear: number
+  onScopeChange: (scope: DashboardScope) => void; onSeasonYearChange: (year: number) => void
+}) {
   const navigate = useNavigate()
+  const t = useT()
+  const [analyticsStatus, setAnalyticsStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const { token } = useAuth()
   const { activeLedgerId, currentLedger } = useLedgers()
 
@@ -40,7 +63,8 @@ export function OverviewPage() {
   // 态后台 refetch。accounts / tags 实体本身是 user-global,但首页 Top 卡片
   // 想看的是「当前账本里活跃的账户/标签」,所以 stats 用 ledger 过滤,
   // 缓存也按账本分桶。资产页/标签页要跨账本时另外不带 ledgerId 拉。
-  const bucket = activeLedgerId || '__none__'
+  const skiMode = currentLedger?.statistics_mode === 'ski_season'
+  const bucket = `${activeLedgerId || '__none__'}:${skiMode ? `${scope}:${seasonYear}` : 'standard'}`
   const [accounts, setAccounts] = usePageCache<WorkspaceAccount[]>(`overview:${bucket}:accounts`, [])
   const [tags, setTags] = usePageCache<WorkspaceTag[]>(`overview:${bucket}:tags`, [])
   // 当前账本下的全部分类(用于把 TopCategoriesList 里的 category_name 反查
@@ -156,6 +180,7 @@ export function OverviewPage() {
   }, [token, activeLedgerId])
 
   const loadAnalytics = useCallback(async () => {
+    if (skiMode) setAnalyticsStatus('loading')
     const now = new Date()
     const msd = Math.max(1, Math.min(28, currentLedger?.month_start_day ?? 1))
     const currentPeriod = periodLabel(now, msd)
@@ -163,13 +188,15 @@ export function OverviewPage() {
     // allSettled:单个请求失败时其它请求的数据依然 set。
     const results = await Promise.allSettled([
       fetchWorkspaceAnalytics(token, {
-        scope: 'year',
+        scope: skiMode ? (scope === 'year' ? 'ski_season' : scope) : 'year',
+        period: skiMode ? (scope === 'year' ? String(seasonYear) : scope === 'month' ? currentPeriod : undefined) : undefined,
         metric: 'expense',
         ledgerId: activeLedgerId || undefined,
         tzOffsetMinutes,
       }),
       fetchWorkspaceAnalytics(token, {
-        scope: 'year',
+        scope: skiMode ? (scope === 'year' ? 'ski_season' : scope) : 'year',
+        period: skiMode ? (scope === 'year' ? String(seasonYear) : scope === 'month' ? currentPeriod : undefined) : undefined,
         metric: 'income',
         ledgerId: activeLedgerId || undefined,
         tzOffsetMinutes,
@@ -192,10 +219,16 @@ export function OverviewPage() {
       }),
     ])
     const [rYearExpense, rYearIncome, rMonthly, rAll, rCounts] = results
+    // 雪季切换时明确展示加载/失败，不能把未返回的金额显示成真实零值。
+    if (skiMode) setAnalyticsStatus(results.every((r) => r.status === 'fulfilled') ? 'ready' : 'error')
     if (rYearExpense.status === 'fulfilled') {
-      setAnalyticsData(rYearExpense.value)
-      setCurrentYearSummary(rYearExpense.value.summary)
-      setCurrentYearSeries(rYearExpense.value.series || [])
+      const data = skiMode && scope === 'year' ? {
+        ...rYearExpense.value,
+        series: fillSeasonSeries(seasonYear, rYearExpense.value.series || []),
+      } : rYearExpense.value
+      setAnalyticsData(data)
+      setCurrentYearSummary(data.summary)
+      setCurrentYearSeries(data.series || [])
     }
     if (rYearIncome.status === 'fulfilled') {
       setAnalyticsIncomeRanks(rYearIncome.value.category_ranks || [])
@@ -221,7 +254,7 @@ export function OverviewPage() {
         first_tx_at: s?.first_tx_at ?? null,
       })
     }
-  }, [token, activeLedgerId, currentLedger])
+  }, [token, activeLedgerId, currentLedger, skiMode, scope, seasonYear])
 
   useEffect(() => {
     void loadAccountsAndTags()
@@ -293,8 +326,19 @@ export function OverviewPage() {
     void setAppBadge(overBudgetCount)
   }, [overBudgetCount])
 
+  if (skiMode && analyticsStatus !== 'ready') return (
+    <div role="status" className="p-6 text-sm text-muted-foreground">
+      {t(analyticsStatus === 'loading' ? 'ski.loading' : 'ski.loadError')}
+      {analyticsStatus === 'error' && <button className="ml-3 underline" onClick={() => void loadAnalytics()}>{t('attachments.retry')}</button>}
+    </div>
+  )
+
   return (
     <OverviewSection
+      selectedScope={scope}
+      seasonYear={seasonYear}
+      onScopeChange={onScopeChange}
+      onSeasonYearChange={onSeasonYearChange}
       accounts={accounts}
       tags={tags}
       currentMonthSummary={currentMonthSummary}

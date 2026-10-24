@@ -1,4 +1,23 @@
 const zhTW = {
+  'ski.loading': '正在載入所選週期統計…',
+  'ski.loadError': '統計載入失敗，請重試。',
+  'ski.expenseTop': '支出 Top 5',
+  'ski.incomeTop': '收入 Top 5',
+  'ski.noExpense': '所選週期暫無支出紀錄',
+  'ski.period': "統計週期",
+  'ski.current': "本雪季",
+  'ski.history': "歷史雪季",
+  'ski.suffix': "雪季",
+  'ski.balance': "結餘",
+  'ski.setting': "統計週期模式",
+  'ski.standard': "普通模式",
+  'ski.mode': "雪季模式",
+  'ski.settingHint': "雪季為10月1日至次年4月30日；本月統計與預算仍遵循每月起始日。",
+  'ski.scopeHint': "週期切換影響頂部收支、走勢、支出分布和分類排行；記帳筆數/天數為全帳本累計，習慣與預算按本月，資產、帳戶和標籤保持原有口徑。點擊分類開啟的詳情仍為目前帳本全部時間。",
+  'ski.categories': "支出分類",
+  'ski.distribution': "支出分布",
+  'ski.trend': "收支走勢",
+
   'app.brand': 'BeeCount 雲端控制台',
   'app.subtitle': '遠端資料模式 · 多裝置同步',
 

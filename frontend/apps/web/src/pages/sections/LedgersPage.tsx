@@ -20,7 +20,7 @@ import { useLedgers } from '../../context/LedgersContext'
 import { localizeError } from '../../i18n/errors'
 import { useLedgerWrite } from '../../app/useLedgerWrite'
 
-const defaultForm: LedgerForm = { ledger_name: '', currency: 'CNY', month_start_day: 1 }
+const defaultForm: LedgerForm = { ledger_name: '', currency: 'CNY', month_start_day: 1, statistics_mode: 'standard' }
 
 /**
  * 账本列表页 ——
@@ -72,6 +72,7 @@ export function LedgersPage() {
       ledger_name: ledger.ledger_name || '',
       currency: ledger.currency || 'CNY',
       month_start_day: ledger.month_start_day ?? 1,
+      statistics_mode: ledger.statistics_mode ?? 'standard',
     })
   }
 
@@ -99,6 +100,7 @@ export function LedgersPage() {
         ledger_name: createForm.ledger_name.trim(),
         currency: createForm.currency || 'CNY',
         month_start_day: createForm.month_start_day || 1,
+        statistics_mode: createForm.statistics_mode,
       })
       notifySuccess(t('ledgers.notice.created'))
       await refreshLedgers()
@@ -118,6 +120,7 @@ export function LedgersPage() {
           ledger_name: editForm.ledger_name.trim(),
           currency: editForm.currency || editing.currency,
           month_start_day: editForm.month_start_day || 1,
+          statistics_mode: editForm.statistics_mode,
         }),
       )
       notifySuccess(t('ledgers.notice.updated'))

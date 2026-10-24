@@ -15,6 +15,7 @@ import {
   dispatchOpenDetailAccount,
   dispatchOpenDetailTag,
 } from '../../lib/txDialogEvents'
+import { seasonLabel, seasonMonths, type DashboardScope } from '../../lib/skiSeason'
 import { HomeHero } from '../dashboard/HomeHero'
 import { HomeHabitStats } from '../dashboard/HomeHabitStats'
 import { HomeYearHeatmap } from '../dashboard/HomeYearHeatmap'
@@ -26,6 +27,10 @@ import { MonthlyTrendBars } from '../dashboard/MonthlyTrendBars'
 import { TopCategoriesList } from '../dashboard/TopCategoriesList'
 
 interface Props {
+  selectedScope: DashboardScope
+  seasonYear: number
+  onScopeChange: (scope: DashboardScope) => void
+  onSeasonYearChange: (year: number) => void
   accounts: WorkspaceAccount[]
   tags: WorkspaceTag[]
   currentMonthSummary: WorkspaceAnalyticsSummary | null
@@ -60,6 +65,7 @@ interface Props {
  *   - HomeTopTags + HomeTopAccounts 并排
  */
 export function OverviewSection({
+  selectedScope, seasonYear, onScopeChange, onSeasonYearChange,
   accounts,
   tags,
   currentMonthSummary,
@@ -78,7 +84,10 @@ export function OverviewSection({
   onCategoryClickFromTop,
 }: Props) {
   const t = useT()
-  const { ledgers, activeLedgerId, currency } = useLedgers()
+  const { ledgers, activeLedgerId, currency, currentLedger } = useLedgers()
+  const skiMode = currentLedger?.statistics_mode === 'ski_season'
+  const periodTitle = skiMode ? (selectedScope === 'year' ? seasonLabel(seasonYear, t('ski.suffix')) : t(`home.scope.${selectedScope}`)) : undefined
+  const buckets = skiMode ? (selectedScope === 'year' ? seasonMonths(seasonYear) : (analyticsData?.series || []).map((item) => item.bucket)) : undefined
 
   // 预算 + 异常归因被合并进 HomeHero 顶部 chip(hover 出详情),不再独占
   // 卡片占首页空间。月份够算 baseline 的判定跟 server 算法一致(已发生月份 ≥ 3)。
@@ -89,6 +98,10 @@ export function OverviewSection({
   return (
     <div className="space-y-4">
       <HomeHero
+        selectedScope={selectedScope}
+        onScopeChange={onScopeChange}
+        seasonYear={seasonYear}
+        onSeasonYearChange={onSeasonYearChange}
         ledgers={ledgers}
         currentLedgerId={activeLedgerId || undefined}
         monthSummary={currentMonthSummary || undefined}
@@ -101,9 +114,10 @@ export function OverviewSection({
         budgets={budgets}
         budgetUsageById={budgetUsageById}
         anomalyMonths={analyticsData?.anomaly_months || []}
-        hasEnoughMonthsForAnomaly={yearOccurredMonths >= 3}
+        hasEnoughMonthsForAnomaly={!skiMode && yearOccurredMonths >= 3}
       />
 
+      {skiMode && <p className="text-xs text-muted-foreground">{t('ski.scopeHint')}</p>}
       <HomeHabitStats
         monthSummary={currentMonthSummary || undefined}
         ledgerCounts={ledgerCounts || undefined}
@@ -120,20 +134,20 @@ export function OverviewSection({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-        <HomeMonthCategoryDonut ranks={currentMonthCategoryRanks} currency={currency} />
-        <HomeYearHeatmap yearSeries={currentYearSeries} currency={currency} />
+        <HomeMonthCategoryDonut ranks={skiMode ? analyticsData?.category_ranks || [] : currentMonthCategoryRanks} currency={currency} title={periodTitle ? `${periodTitle} · ${t('ski.categories')}` : undefined} />
+        <HomeYearHeatmap yearSeries={currentYearSeries} currency={currency} buckets={buckets} title={periodTitle ? `${periodTitle} · ${t('ski.distribution')}` : undefined} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
         <AssetCompositionDonut accounts={accounts} />
-        <MonthlyTrendBars data={analyticsData?.series || []} />
+        <MonthlyTrendBars showAll={skiMode} data={analyticsData?.series || []} title={periodTitle ? `${periodTitle} · ${t('ski.trend')}` : undefined} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
         <TopCategoriesList
           ranks={analyticsData?.category_ranks || []}
           variant="expense"
-          title={t('analytics.expenseTop5')}
+          title={periodTitle ? `${periodTitle} · ${t('ski.expenseTop')}` : t('analytics.expenseTop5')}
           onClickCategory={
             onCategoryClickFromTop
               ? (name) => onCategoryClickFromTop(name, 'expense')
@@ -143,7 +157,7 @@ export function OverviewSection({
         <TopCategoriesList
           ranks={analyticsIncomeRanks}
           variant="income"
-          title={t('analytics.incomeTop5')}
+          title={periodTitle ? `${periodTitle} · ${t('ski.incomeTop')}` : t('analytics.incomeTop5')}
           onClickCategory={
             onCategoryClickFromTop
               ? (name) => onCategoryClickFromTop(name, 'income')

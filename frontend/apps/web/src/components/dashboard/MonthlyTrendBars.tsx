@@ -23,12 +23,23 @@ interface SeriesItem {
 
 interface Props {
   data: SeriesItem[]
+  title?: string
+  showAll?: boolean
 }
 
 // 固定取最近 N 个月。原来有 6 / 12 / 24 期切换,但 server.series 通常只
 // 返当年数据,切到 24 期没新内容,反而让用户疑惑"按钮没用",直接拿掉。
 // 12 是"完整年度"的天然窗口,看得到季节性又不拥挤。
 const TREND_WINDOW = 12
+
+/** 保留普通年度窗口；自定义周期必须完整展示，尤其本月可能有31个日桶。 */
+export function prepareTrendSeries(data: SeriesItem[], showAll = false) {
+  const selected = showAll ? data : data.slice(-TREND_WINDOW)
+  return selected.map((d) => ({
+    ...d,
+    balance: Number.isFinite(d.balance) ? d.balance : (d.income ?? 0) - (d.expense ?? 0),
+  }))
+}
 
 /**
  * 月度收支走势 — 最近 12 期柱图,叠加净额折线,直观看出某个月是赚到了还是
@@ -37,24 +48,19 @@ const TREND_WINDOW = 12
  * 数据源是后端已经聚合好的 `analyticsData.series`(YYYY-MM bucket),前端只
  * 切片 + 计算 balance(不依赖 server.balance 字段,保险用 income-expense 算)。
  */
-export function MonthlyTrendBars({ data }: Props) {
+export function MonthlyTrendBars({ data, title, showAll = false }: Props) {
   const t = useT()
   const { locale } = useLocale()
   const chinese = locale.startsWith('zh')
 
-  const slice = useMemo(() => {
-    const tail = data.slice(-TREND_WINDOW)
-    return tail.map((d) => ({
-      ...d,
-      balance: Number.isFinite(d.balance) ? d.balance : (d.income ?? 0) - (d.expense ?? 0),
-    }))
-  }, [data])
+  const slice = useMemo(() => prepareTrendSeries(data, showAll), [data, showAll])
 
   const fmt = (v: number) =>
     v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })
 
   // 12 期 x 轴 label 直接用月份末位(MM),完整 bucket 由 tooltip 提供
   const xTickFormatter = (bucket: string): string => {
+    if (showAll) return bucket
     const parts = bucket.split('-')
     if (parts.length >= 2) return parts.slice(1).join('-')
     return bucket
@@ -63,7 +69,7 @@ export function MonthlyTrendBars({ data }: Props) {
   return (
     <Card className="bc-panel overflow-hidden">
       <CardHeader>
-        <CardTitle className="text-base">{t('home.trendBars.title')}</CardTitle>
+        <CardTitle className="text-base">{title || t('home.trendBars.title')}</CardTitle>
       </CardHeader>
       <CardContent>
         {slice.length === 0 ? (
@@ -80,7 +86,7 @@ export function MonthlyTrendBars({ data }: Props) {
                   tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
                   stroke="hsl(var(--border))"
                   tickFormatter={xTickFormatter}
-                  interval={0}
+                  interval={showAll ? 'preserveStartEnd' : 0}
                 />
                 <YAxis
                   tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
