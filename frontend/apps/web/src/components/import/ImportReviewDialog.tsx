@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { ClipboardCheck, FilePlus2, Files, SearchCheck } from 'lucide-react'
 import { Button, Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, useT } from '@beecount/ui'
 import { ApiError, reviewImport, type ImportReview, type ImportReviewChoice } from '@beecount/api-client'
-import { formatIsoDateTimeLocal } from '../../i18n/format'
+import { ImportReconciliation } from './ImportReconciliation'
+import { ImportReviewRowCard } from './ImportReviewRowCard'
+import type { ImportCandidateQuery } from '@beecount/api-client'
 import { localizeError } from '../../i18n/errors'
 
 interface Props {
@@ -21,6 +23,7 @@ export function ImportReviewDialog({ open, token, importToken, insertAll, onClos
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const generation = useRef(0)
+  const filters = useRef({ unresolved: false, candidates: {} as Record<string, ImportCandidateQuery> })
   const load = useCallback(async (
     offset = 0, current?: ImportReview, decisions?: Record<string, ImportReviewChoice>, confirm = false,
   ) => {
@@ -30,6 +33,7 @@ export function ImportReviewDialog({ open, token, importToken, insertAll, onClos
     try {
       const next = await reviewImport(token, importToken, {
         offset, limit: 25, revision: current?.revision, decisions, confirm,
+        unresolved_only: filters.current.unresolved, candidate_queries: filters.current.candidates,
       })
       if (requestId !== generation.current) return
       setPlan(next)
@@ -52,7 +56,7 @@ export function ImportReviewDialog({ open, token, importToken, insertAll, onClos
   const loadRef = useRef(load)
   loadRef.current = load
   useEffect(() => {
-    if (open) { setPlan(null); void loadRef.current() }
+    if (open) { filters.current = { unresolved: false, candidates: {} }; setPlan(null); void loadRef.current() }
     return () => { generation.current++ }
   }, [open, importToken])
 
@@ -76,41 +80,26 @@ export function ImportReviewDialog({ open, token, importToken, insertAll, onClos
             })}
           </div>
           <p className="text-sm font-medium" aria-live="polite">{t('import.review.totals', plan.counts)}</p>
+          <p className="text-sm font-medium">{t('import.reconcile.target', { name: plan.target.name || plan.target.ledger_id || '—', currency: plan.currency })}</p>
+          <ImportReconciliation amounts={plan.amounts} currency={plan.currency} />
+          <p className="text-xs text-muted-foreground">{t('import.reconcile.scope')}</p>
+          <div className="flex flex-wrap items-center gap-3 text-sm">
+            <label className="flex items-center gap-2"><input type="checkbox" checked={plan.unresolved_only} disabled={busy}
+              onChange={(event) => { filters.current.unresolved = event.target.checked; void load(0, plan) }} />{t('import.review.onlyUnresolved')}</label>
+            <Button size="sm" variant="outline" disabled={busy || !plan.counts.unresolved}
+              onClick={() => { filters.current.unresolved = true; void load(0, plan) }}>{t('import.review.nextUnresolved')}</Button>
+          </div>
           <div className="space-y-3">
-            {plan.items.map((row) => <div key={row.row_number} className="space-y-2 rounded-xl border p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-medium text-primary">{t('import.review.row', { row: row.row_number })} · {t(`import.review.${row.kind}`)}</span>
-                <select
-                  className="h-9 max-w-full rounded-lg border bg-background px-2 text-sm"
-                  aria-label={t('import.review.choice', { row: row.row_number })}
-                  disabled={busy}
-                  value={row.action === 'skip' ? `skip:${row.match_id}` : row.action || ''}
-                  onChange={(event) => {
-                    const value = event.target.value
-                    if (!value) return
-                    const choice: ImportReviewChoice = value === 'insert' ? { action: 'insert' }
-                      : { action: 'skip', match_id: value.slice(5) }
-                    void load(plan.offset, plan, { [row.row_number]: choice })
-                  }}
-                >
-                  <option value="" disabled>{t('import.review.pick')}</option>
-                  <option value="insert">{t('import.review.insert')}</option>
-                  {row.candidates.map((item, i) => <option key={item.sync_id} value={`skip:${item.sync_id}`}>
-                    {t('import.review.skipCandidate', { index: i + 1 })}
-                  </option>)}
-                </select>
-              </div>
-              <p className="text-sm">{formatIsoDateTimeLocal(row.incoming.happened_at)} · {row.incoming.tx_type === 'income' ? '+' : '−'}{row.incoming.amount} {row.incoming.currency_code || ''} · {row.incoming.category_name || '—'} · {row.incoming.account_name || '—'}</p>
-              <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">{row.incoming.note || '—'}</p>
-              {row.candidates.length ? <details className="rounded-lg bg-muted/40 p-2 text-xs" open={row.kind === 'review'}>
-                <summary className="cursor-pointer">{t('import.review.existing', { count: row.candidate_count })}</summary>
-                <p className="mt-2 text-muted-foreground">{t(row.reason === 'same_file' ? 'import.review.sameFile' : row.reason === 'content' ? 'import.review.content' : row.reason === 'near_time' ? 'import.review.nearTime' : 'import.review.similar')}</p>
-                {row.candidates.map((item, i) => <div key={item.sync_id} className="mt-2 whitespace-pre-wrap break-words border-t pt-2">
-                  #{i + 1} · {formatIsoDateTimeLocal(item.happened_at)} · {item.amount} {item.currency_code || ''} · {item.category_name || '—'} · {item.account_name || '—'}<br />{item.note || '—'}
-                </div>)}
-                {row.candidate_count > row.candidates.length ? <p className="mt-2">{t('import.review.candidateLimit')}</p> : null}
-              </details> : null}
-            </div>)}
+            {plan.items.map((row) => <ImportReviewRowCard key={row.row_number} row={row} busy={busy}
+              onChoice={(choice) => void load(plan.offset, plan, { [row.row_number]: choice })}
+              onCandidates={(query) => {
+                filters.current.candidates = { ...filters.current.candidates, [row.row_number]: query }
+                // 候选查询只需保留当前页，避免大文件翻页积累无用请求字段。
+                const visible = new Set(plan.items.map((item) => String(item.row_number)))
+                filters.current.candidates = Object.fromEntries(Object.entries(filters.current.candidates).filter(([key]) => visible.has(key)))
+                void load(plan.offset, plan)
+              }} />)}
+            {!plan.items.length ? <p className="p-3 text-sm text-muted-foreground">{t('import.review.noUnresolved')}</p> : null}
           </div>
           <div className="flex items-center justify-between gap-2 text-xs">
             <Button variant="outline" size="sm" disabled={busy || plan.offset === 0} onClick={() => void load(Math.max(0, plan.offset - 25), plan)}>{t('import.review.previous')}</Button>

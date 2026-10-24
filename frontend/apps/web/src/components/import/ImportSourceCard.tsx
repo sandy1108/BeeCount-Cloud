@@ -24,6 +24,12 @@ export function ImportSourceCard({ entry, summary }: { entry: ImportEntry; summa
           <div className="flex flex-wrap gap-2">
             {formats.map((label) => <span key={label} className="rounded-full border border-primary/15 bg-background/70 px-2.5 py-1 text-[11px] font-medium text-primary">{label}</span>)}
           </div>
+          {baishi ? <details className="rounded-lg border border-primary/15 bg-background/60 p-3 text-xs leading-relaxed">
+            <summary className="cursor-pointer font-medium text-primary">{t('import.guide.title')}</summary>
+            <div className="mt-2 space-y-2 text-muted-foreground">
+              <p>{t('import.guide.steps')}</p><p>{t('import.guide.unsupported')}</p><p>{t('import.guide.errors')}</p>
+            </div>
+          </details> : null}
           {baishi && summary ? (
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
               <span>{t('import.baishi.source', { name: `${summary.source_ledger_name || '—'} · ${summary.source_currency || '—'}` })}</span>

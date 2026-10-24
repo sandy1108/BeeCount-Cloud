@@ -27,6 +27,7 @@ import {
 import { ImportSourceCard, type ImportEntry } from '../../components/import/ImportSourceCard'
 import { FieldMappingDialog } from '../../components/import/FieldMappingDialog'
 import { FileDropZone } from '../../components/import/FileDropZone'
+import { ImportHistoryDialog } from '../../components/import/ImportHistoryDialog'
 import { ImportReviewDialog } from '../../components/import/ImportReviewDialog'
 import { ImportProgressDialog } from '../../components/import/ImportProgressDialog'
 import { ImportStatsCard } from '../../components/import/ImportStatsCard'
@@ -59,6 +60,7 @@ export function ImportPage() {
   const [summary, setSummary] = useState<ImportSummary | null>(null)
   const [executeOpen, setExecuteOpen] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [executeSucceeded, setExecuteSucceeded] = useState(false)
   const [mappingDialogOpen, setMappingDialogOpen] = useState(false)
 
@@ -179,6 +181,7 @@ export function ImportPage() {
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <h1 className="text-lg font-semibold">{t('import.pageTitle')}</h1>
+        <Button className="ml-auto" variant="outline" size="sm" onClick={() => setHistoryOpen(true)}>{t('import.history.title')}</Button>
       </div>
 
       <TabsList role="group" aria-label={t('import.entry.label')} className="grid grid-cols-2 gap-1 rounded-xl border border-border/60 bg-muted/50 p-1.5">
@@ -206,6 +209,7 @@ export function ImportPage() {
         })}
       </TabsList>
       <ImportSourceCard entry={entry} summary={summary} />
+      <ImportHistoryDialog open={historyOpen} token={token} onClose={() => setHistoryOpen(false)} />
 
       {phase === 'idle' || (phase === 'uploading' && !summary) ? (
         <Card className="bc-panel">

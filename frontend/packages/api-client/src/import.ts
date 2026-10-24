@@ -7,7 +7,7 @@
  *  - executeImport(token)          —— SSE 流,生成 stage / complete / error 事件
  *  - cancelImport(token)           —— DELETE 取消
  */
-import { API_BASE, authedDelete, authedPost } from './http'
+import { API_BASE, authedDelete, authedGet, authedPost } from './http'
 import { ApiError, extractApiError } from './errors'
 
 export type ImportSourceFormat = 'baishi_aa' | 'beecount' | 'alipay' | 'wechat' | 'generic'
@@ -75,6 +75,7 @@ export type ImportStats = {
 }
 
 export type ImportTransactionSample = {
+  currency_code?: string | null
   tx_type: 'expense' | 'income' | 'transfer'
   amount: string
   happened_at: string
@@ -254,6 +255,9 @@ export type ImportReviewTransaction = {
   tx_type: string; amount: string; happened_at: string; note: string | null
   category_name: string | null; account_name: string | null
 }
+export type ImportReviewCandidate = ImportReviewTransaction & { sync_id: string; differences: string[] }
+export type ImportCandidateQuery = { search?: string; offset?: number; limit?: number }
+export type ImportReconciliation = Record<'file' | 'insert' | 'skip' | 'unresolved', { count: number; income: string; expense: string }>
 export type ImportReviewRow = {
   row_number: number
   kind: 'new' | 'matched' | 'review'
@@ -261,18 +265,39 @@ export type ImportReviewRow = {
   action: 'insert' | 'skip' | null
   match_id: string | null
   incoming: ImportReviewTransaction
-  candidates: Array<ImportReviewTransaction & { sync_id: string }>
+  candidates: ImportReviewCandidate[]
+  selected_candidate: ImportReviewCandidate | null
   candidate_count: number
+  candidate_total: number; candidate_offset: number; candidate_limit: number; candidate_search: string
 }
 export type ImportReview = {
   revision: string
+  amounts: ImportReconciliation
+  currency: string
+  target: { ledger_id: string | null; name: string | null }
+  file_total: number
+  unresolved_only: boolean
   counts: { new: number; matched: number; review: number; insert: number; skip: number; unresolved: number }
   items: ImportReviewRow[]
   offset: number; limit: number; total: number
 }
 export async function reviewImport(
   token: string, importToken: string,
-  options: { revision?: string; decisions?: Record<string, ImportReviewChoice>; confirm?: boolean; offset?: number; limit?: number } = {},
+  options: { revision?: string; decisions?: Record<string, ImportReviewChoice>; confirm?: boolean; offset?: number; limit?: number; unresolved_only?: boolean; candidate_queries?: Record<string, ImportCandidateQuery> } = {},
 ): Promise<ImportReview> {
   return authedPost(`/import/${encodeURIComponent(importToken)}/review`, token, options)
+}
+
+/** 本人成功导入历史；服务端同时检查当前账本权限。 */
+export type ImportHistory = {
+  offset: number; limit: number; total: number
+  items: Array<{
+    id: string; created_at: string; ledger_id: string; ledger_name: string | null
+    result: 'success'; source_format: string | null; file_hash: string | null
+    created_count: number; skipped_count: number
+    report: { version: number; currency: string; source_ledger_name: string | null; amounts: ImportReconciliation } | null
+  }>
+}
+export function getImportHistory(token: string, offset = 0): Promise<ImportHistory> {
+  return authedGet(`/import/history?offset=${offset}&limit=10`, token)
 }
