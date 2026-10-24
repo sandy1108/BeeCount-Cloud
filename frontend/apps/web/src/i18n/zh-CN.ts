@@ -416,6 +416,9 @@ const zhCN = {
   'categories.empty.title': '还没有分类',
   'categories.empty.desc': '移动端添加分类后会自动同步到这里，支持一级/二级层级。',
   'categories.empty.byType': '该类型下暂无分类',
+  'categories.count.label': '{count}个分类',
+  'categories.stats.scope': '统计范围：全部可见账本',
+  'categories.stats.explanation': '卡片显示交易笔数，按跨账本统计，不随顶部账本选择切换。',
 
   // 标签页
   'tags.empty.title': '还没有标签',

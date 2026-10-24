@@ -862,6 +862,9 @@ const zhTW = {
   'categories.empty.title': '還沒有分類',
   'categories.empty.desc': '行動端新增分類後會自動同步到這裡，支援一級／二級層級。',
   'categories.empty.byType': '該類型下暫無分類',
+  'categories.count.label': '{count}個分類',
+  'categories.stats.scope': '統計範圍：全部可見帳本',
+  'categories.stats.explanation': '卡片顯示交易筆數，按跨帳本統計，不隨頂部帳本選擇切換。',
 
   'tags.empty.title': '還沒有標籤',
   'tags.empty.desc': '在行動端新增標籤後，這裡會以卡片方式展示。',

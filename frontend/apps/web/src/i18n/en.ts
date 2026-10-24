@@ -898,6 +898,9 @@ const en = {
   'categories.empty.title': 'No categories yet',
   'categories.empty.desc': 'Categories created on mobile will sync here automatically (supports two levels).',
   'categories.empty.byType': 'No categories under this type',
+  'categories.count.label': '{count} categories',
+  'categories.stats.scope': 'Scope: all accessible ledgers',
+  'categories.stats.explanation': 'Cards show transaction counts across ledgers, regardless of the ledger selected above.',
 
   'tags.empty.title': 'No tags yet',
   'tags.empty.desc': 'Tags created on mobile will appear here as cards.',

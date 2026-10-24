@@ -285,6 +285,11 @@ function CategoriesCardBody({
 
   return (
     <div className="space-y-4">
+      {/* 分类管理跨账本聚合，明确区分分类数量和交易笔数，避免误认当前账本统计。 */}
+      <div className="space-y-1 text-sm text-muted-foreground">
+        <p className="font-medium text-foreground/80">{t('categories.stats.scope')}</p>
+        <p className="text-xs">{t('categories.stats.explanation')}</p>
+      </div>
       {/* tabs — 选中态用主题色背景 + 主题色左边框强化存在感，dark mode 下
           原来的 bg-card 跟 bg-muted 差异太小（基本都是深灰），看不出来。 */}
       <div className="flex gap-1 rounded-xl border border-border/50 bg-muted/30 p-1">
@@ -311,7 +316,7 @@ function CategoriesCardBody({
                     active ? 'bg-primary/25 text-primary' : 'bg-muted text-muted-foreground/80'
                   }`}
                 >
-                  {count}
+                  {t('categories.count.label', { count })}
                 </span>
               </span>
             </button>
