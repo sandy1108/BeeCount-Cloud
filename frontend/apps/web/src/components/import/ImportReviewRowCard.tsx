@@ -41,6 +41,7 @@ export function ImportReviewRowCard({ row, busy, onChoice, onCandidates }: {
         <Button type="submit" size="sm" variant="outline" disabled={busy}>{t('import.review.searchButton')}</Button>
       </form>
       {row.candidates.length === 0 ? <p className="p-2">{t('import.review.noCandidates')}</p> : null}
+      <div className="max-h-72 overflow-y-auto pr-1">
       {row.candidates.map((item, i) => <div key={item.sync_id} className="mt-2 space-y-2 border-t pt-2">
         <div className="flex items-center justify-between gap-2">
           <span>#{row.candidate_offset + i + 1}</span>
@@ -51,6 +52,7 @@ export function ImportReviewRowCard({ row, busy, onChoice, onCandidates }: {
         </div>
         {values(item, item.differences)}
       </div>)}
+      </div>
       <div className="mt-3 flex items-center justify-between gap-2">
         <Button variant="outline" size="sm" disabled={busy || row.candidate_offset === 0}
           onClick={() => onCandidates({ search: row.candidate_search, offset: Math.max(0, row.candidate_offset - row.candidate_limit) })}>{t('import.review.previous')}</Button>

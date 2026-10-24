@@ -1926,6 +1926,10 @@ const zhCN = {
   "import.guide.unsupported": "混合币种、历史汇率折算、退款、转账、结算及复杂多人分账暂不支持。请先单独核对这些记录，不要直接改币种或交易类型来绕过检查；需要保留不支持的记录时，先另行导出备份并在目标端核实后手工补录。",
   "import.guide.errors": "出现解析错误时，请根据错误中的原文件行号和字段检查；修正后重新上传并核对笔数与收支。任何错误未解决前，整份文件都不会写入。上传预览有效期30分钟，服务重启或令牌过期后需重新上传。",
 
+  "import.reconcile.inserted": "已新增",
+  "import.reconcile.skipped": "已跳过",
+  "import.history.refresh": "刷新",
+
 } as const
 
 export default zhCN

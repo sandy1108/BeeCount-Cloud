@@ -68,7 +68,7 @@ export function TransactionsPreviewCard({ samples, totalRows }: Props) {
                           : ''
                     }`}>
                       {tx.tx_type === 'expense' ? '−' : tx.tx_type === 'income' ? '+' : ''}
-                      {formatAmount(tx.amount)}
+                      {formatAmount(tx.amount)} {tx.currency_code || ''}
                     </td>
                     <td className="px-3 py-1.5">
                       {tx.parent_category_name ? (

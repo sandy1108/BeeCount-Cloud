@@ -37,13 +37,13 @@ export function ImportHistoryDialog({ open, token, onClose }: { open: boolean; t
         {item.file_hash ? <p className="break-all font-mono text-[11px] text-muted-foreground">SHA256: {item.file_hash}</p> : null}
         {item.report ? <>
           <p className="text-xs">{t('import.baishi.source', { name: item.report.source_ledger_name || '—' })}</p>
-          <ImportReconciliation amounts={item.report.amounts} currency={item.report.currency} />
+          <ImportReconciliation completed amounts={item.report.amounts} currency={item.report.currency} />
         </> : <p className="text-xs text-muted-foreground">{t('import.history.legacy', { created: item.created_count, skipped: item.skipped_count })}</p>}
       </article>)}
       {history && !history.items.length ? <p className="text-sm">{t('import.history.empty')}</p> : null}
       <div className="flex justify-between gap-2">
         <Button variant="outline" size="sm" disabled={busy || !history || !history.offset} onClick={() => void load(Math.max(0, (history?.offset || 0) - 10))}>{t('import.review.previous')}</Button>
-        <Button variant="outline" size="sm" disabled={busy} onClick={() => void load(history?.offset || 0)}>{t('import.review.reload')}</Button>
+        <Button variant="outline" size="sm" disabled={busy} onClick={() => void load(history?.offset || 0)}>{t('import.history.refresh')}</Button>
         <Button variant="outline" size="sm" disabled={busy || !history || history.offset + history.limit >= history.total} onClick={() => history && void load(history.offset + history.limit)}>{t('import.review.next')}</Button>
       </div>
     </DialogContent>

@@ -12,7 +12,7 @@ describe('import review experience', () => {
 
   it('keeps server decimal strings and separates file, inserted, skipped and unresolved totals', () => {
     const markup = renderToStaticMarkup(<LocaleProvider dictionaries={dictionaries}>
-      <ImportReconciliation currency="MOP" amounts={{
+      <ImportReconciliation completed currency="MOP" amounts={{
         file: { count: 3, expense: '9007199254740993.10', income: '0' },
         insert: { count: 1, expense: '0.10', income: '0' },
         skip: { count: 1, expense: '9007199254740992.90', income: '0' },
@@ -21,6 +21,8 @@ describe('import review experience', () => {
     </LocaleProvider>)
     expect(markup).toContain('9007199254740993.10')
     expect(markup).toContain('尚待确认')
+    expect(markup).toContain('已新增')
+    expect(markup).not.toContain('本次将新增')
     expect(markup).toContain('MOP')
   })
 

@@ -1824,6 +1824,10 @@ const zhTW = {
   "import.guide.unsupported": "混合幣別、歷史匯率折算、退款、轉帳、結算及複雜多人分帳暫不支援。請先單獨核對這些記錄，不要直接改幣別或交易類型來繞過檢查；需要保留不支援的記錄時，先另行匯出備份並在目標端核實後手工補錄。",
   "import.guide.errors": "出現解析錯誤時，請依錯誤中的原始檔案行號和欄位檢查；修正後重新上傳並核對筆數與收支。任何錯誤未解決前，整份檔案都不會寫入。上傳預覽有效期30分鐘，服務重啟或權杖過期後需重新上傳。",
 
+  "import.reconcile.inserted": "已新增",
+  "import.reconcile.skipped": "已略過",
+  "import.history.refresh": "重新整理",
+
 } as const
 
 export default zhTW

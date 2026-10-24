@@ -1888,6 +1888,10 @@ const en = {
   "import.guide.unsupported": "Mixed currencies, historical conversions, refunds, transfers, settlements and complex splits are not supported yet. Review these records separately. Do not change currency or transaction type to bypass validation. Back up unsupported records separately and verify before entering them manually.",
   "import.guide.errors": "Use the original file row and field shown in each error to investigate. Fix, upload again, then reconcile counts and totals. The entire file is blocked while any error remains. Previews expire after 30 minutes and are lost on service restart; upload again when needed.",
 
+  "import.reconcile.inserted": "Inserted",
+  "import.reconcile.skipped": "Skipped",
+  "import.history.refresh": "Refresh",
+
 } as const
 
 export default en
