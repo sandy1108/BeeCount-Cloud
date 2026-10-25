@@ -52,6 +52,7 @@ import {
 import { localizeError } from '../../i18n/errors'
 import { TwoFactorAuthInline } from './TwoFactorAuthSection'
 import { SettingsExchangeRatesSection } from './SettingsExchangeRatesSection'
+import { PwaInstallSettingsSection } from './PwaInstallSettingsSection'
 
 const AVATAR_MAX_BYTES = 4 * 1024 * 1024 // 4 MB,跟 server 限制一致
 const DISPLAY_NAME_MAX = 60
@@ -695,6 +696,8 @@ export function SettingsProfileAppearanceSection() {
           </Select>
         </CardContent>
       </Card>
+
+      <PwaInstallSettingsSection />
 
       {/* 汇率管理小节 —— 主币种未设置时内部渲染空态、不发请求 */}
       <SettingsExchangeRatesSection />

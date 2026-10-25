@@ -29,7 +29,7 @@ applyPrimaryColor(initialPrimaryColor())
 // File Handler:订阅 launchQueue,接住「双击 .csv 用蜜蜂记账打开」的文件
 setupLaunchQueue()
 
-// PWA install prompt:接住 beforeinstallprompt,延后到 engagement 达标再弹
+// 仅缓存浏览器安装能力，由个人资料页的手动入口触发，不自动提示。
 setupInstallPrompt()
 
 // 注册 PWA service worker：生产 + dev 都注册，dev 下 sw 只管静态资源不影响

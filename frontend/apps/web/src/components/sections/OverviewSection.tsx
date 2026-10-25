@@ -138,12 +138,12 @@ export function OverviewSection({
         <span className="h-px flex-1 bg-border/60" aria-hidden />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
+      <div className="grid gap-4 lg:grid-cols-2">
         <HomeMonthCategoryDonut ranks={skiMode ? analyticsData?.category_ranks || [] : currentMonthCategoryRanks} currency={currency} title={periodTitle ? `${periodTitle} · ${t('ski.categories')}` : undefined} />
         <HomeYearHeatmap yearSeries={currentYearSeries} currency={currency} buckets={buckets} title={periodTitle ? `${periodTitle} · ${t('ski.distribution')}` : undefined} />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1.1fr_1fr]">
+      <div className="grid gap-4 lg:grid-cols-2">
         <AssetCompositionDonut accounts={accounts} />
         <MonthlyTrendBars showAll={skiMode} data={analyticsData?.series || []} title={periodTitle ? `${periodTitle} · ${t('ski.trend')}` : undefined} />
       </div>
