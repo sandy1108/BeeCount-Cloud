@@ -11,6 +11,20 @@ interface Props {
   title?: string
 }
 
+/** 固定展示金额前五，其余合并；保留原行供展开，不用名称判断合并项。 */
+export function prepareCategoryDonut(ranks: WorkspaceAnalyticsCategoryRank[]) {
+  const sorted = ranks.slice().filter((row) => row.total > 0).sort((a, b) => b.total - a.total)
+  const rest = sorted.slice(5)
+  const slices = sorted.slice(0, 5).map((row) => ({
+    name: row.category_name, total: row.total, count: row.tx_count, isOther: false,
+  }))
+  if (rest.length) slices.push({
+    name: '', total: rest.reduce((sum, row) => sum + row.total, 0),
+    count: rest.reduce((sum, row) => sum + row.tx_count, 0), isOther: true,
+  })
+  return { slices, rest, categoryCount: sorted.length, total: sorted.reduce((sum, row) => sum + row.total, 0) }
+}
+
 /**
  * 本月支出分类占比环。SVG conic-gradient 做分段，Top 5 各一段，之外合并为
  * "其他"。参考 `AccountsPanel.AssetsCompositionMini`，同样风格避免引入 recharts
@@ -19,26 +33,7 @@ interface Props {
 export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title }: Props) {
   const t = useT()
   const otherLabel = t('home.monthDonut.other')
-  const { slices, total } = useMemo(() => {
-    const sorted = ranks
-      .slice()
-      .sort((a, b) => b.total - a.total)
-      .filter((r) => r.total > 0)
-    const top = sorted.slice(0, 5)
-    const rest = sorted.slice(5)
-    const restTotal = rest.reduce((s, r) => s + r.total, 0)
-    const restCount = rest.reduce((s, r) => s + r.tx_count, 0)
-    const all = top.map((r) => ({
-      name: r.category_name || t('home.monthDonut.uncategorized'),
-      total: r.total,
-      count: r.tx_count
-    }))
-    if (restTotal > 0) {
-      all.push({ name: otherLabel, total: restTotal, count: restCount })
-    }
-    const sum = all.reduce((s, r) => s + r.total, 0)
-    return { slices: all, total: sum }
-  }, [ranks, otherLabel, t])
+  const { slices, rest, total, categoryCount } = useMemo(() => prepareCategoryDonut(ranks), [ranks])
 
   // 配色：前 5 用 BeeCount mobile 常用调色盘，"其他"用中性灰
   const PALETTE = ['#ef4444', '#f59e0b', '#3b82f6', '#10b981', '#a855f7']
@@ -49,14 +44,14 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title }: Props
     let acc = 0
     const stops: string[] = []
     slices.forEach((s, i) => {
-      const color = s.name === otherLabel ? OTHER_COLOR : PALETTE[i % PALETTE.length]
+      const color = s.isOther ? OTHER_COLOR : PALETTE[i % PALETTE.length]
       const start = (acc / total) * 100
       acc += s.total
       const end = (acc / total) * 100
       stops.push(`${color} ${start.toFixed(3)}% ${end.toFixed(3)}%`)
     })
     return `conic-gradient(from -90deg, ${stops.join(',')})`
-  }, [slices, total, otherLabel])
+  }, [slices, total])
 
   return (
     <Card className="bc-panel overflow-hidden">
@@ -80,7 +75,7 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title }: Props
             {title ? t('ski.noExpense') : t('home.monthDonut.empty')}
           </div>
         ) : (
-          <div className="flex items-center gap-5">
+          <div className="flex flex-wrap items-center gap-5">
             <div className="relative h-40 w-40 shrink-0">
               <div
                 className="absolute inset-0 rounded-full"
@@ -101,14 +96,14 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title }: Props
                   className="mt-0.5"
                 />
                 <div className="mt-0.5 text-[10px] text-muted-foreground">
-                  {t('home.monthDonut.categoryCount').replace('{count}', String(slices.length))}
+                  {t('home.monthDonut.categoryCount').replace('{count}', String(categoryCount))}
                 </div>
               </div>
             </div>
-            <ul className="min-w-0 flex-1 space-y-1.5">
+            <ul className="min-w-[150px] flex-1 space-y-1.5">
               {slices.map((s, i) => {
                 const color =
-                  s.name === otherLabel ? OTHER_COLOR : PALETTE[i % PALETTE.length]
+                  s.isOther ? OTHER_COLOR : PALETTE[i % PALETTE.length]
                 const pct = total > 0 ? (s.total / total) * 100 : 0
                 return (
                   <li key={`${s.name}-${i}`} className="flex items-center gap-2 text-xs">
@@ -117,7 +112,9 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title }: Props
                       style={{ background: color }}
                       aria-hidden
                     />
-                    <span className="flex-1 truncate">{s.name}</span>
+                    <span className="flex-1 truncate" title={s.isOther ? otherLabel : s.name}>
+                      {s.isOther ? t('home.monthDonut.otherCount').replace('{count}', String(rest.length)) : s.name || t('home.monthDonut.uncategorized')}
+                    </span>
                     <span className="text-muted-foreground font-mono tabular-nums">
                       {pct.toFixed(1)}%
                     </span>
@@ -133,6 +130,20 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title }: Props
             </ul>
           </div>
         )}
+        {rest.length > 0 && <details className="group mt-4 rounded-xl border border-border/60 bg-muted/20 p-3">
+          <summary className="cursor-pointer text-xs font-semibold text-foreground">
+            {t('home.monthDonut.otherDetails').replace('{count}', String(rest.length))}
+          </summary>
+          <p className="mt-2 text-[11px] text-muted-foreground">{t('home.monthDonut.otherHint')}</p>
+          <ul className="mt-3 space-y-2">
+            {rest.map((row, index) => <li key={index} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
+              <span className="min-w-0 flex-1 break-words">{row.category_name || t('home.monthDonut.uncategorized')}</span>
+              <span className="text-muted-foreground">{t('home.monthDonut.txCount').replace('{count}', String(row.tx_count))}</span>
+              <span className="font-mono text-muted-foreground">{(row.total / total * 100).toFixed(1)}%</span>
+              <Amount value={row.total} currency={currency} size="xs" className="w-20 text-right" />
+            </li>)}
+          </ul>
+        </details>}
       </CardContent>
     </Card>
   )

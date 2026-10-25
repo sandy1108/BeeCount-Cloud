@@ -160,6 +160,7 @@ def get_my_profile(
         appearance=appearance,
         ai_config=ai_config,
         primary_currency=primary_currency,
+        statistics_focus=profile.statistics_focus if profile is not None else "balance",
     )
 
 
@@ -182,6 +183,7 @@ async def patch_my_profile(
             appearance_json=_dump_appearance_json(req.appearance),
             ai_config_json=_dump_appearance_json(req.ai_config),
             primary_currency=(req.primary_currency.upper() if req.primary_currency is not None else None),
+            statistics_focus=req.statistics_focus or "balance",
             updated_at=now,
         )
         db.add(profile)
@@ -202,6 +204,8 @@ async def patch_my_profile(
             profile.ai_config_json = _dump_appearance_json(req.ai_config)
         if req.primary_currency is not None:
             profile.primary_currency = req.primary_currency.upper()
+        if req.statistics_focus is not None:
+            profile.statistics_focus = req.statistics_focus
         profile.updated_at = now
     db.commit()
     db.refresh(profile)
@@ -228,6 +232,7 @@ async def patch_my_profile(
             "theme_primary_color": profile.theme_primary_color,
             "appearance": appearance,
             "primary_currency": profile.primary_currency,
+            "statistics_focus": profile.statistics_focus,
             # ai_config 可能很大(providers 数组里若干对象),WS payload 不塞,
             # 客户端收到 profile_change 自己拉 /profile/me 即可。
         },
@@ -248,6 +253,7 @@ async def patch_my_profile(
         appearance=appearance,
         ai_config=ai_config,
         primary_currency=profile.primary_currency,
+        statistics_focus=profile.statistics_focus,
     )
 
 

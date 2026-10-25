@@ -1,6 +1,6 @@
 import { API_BASE, authedGet, authedPatch, resolveApiUrl } from './http'
 import { extractApiError } from './errors'
-import type { AIConfig, ProfileAppearance, ProfileMe } from './types'
+import type { AIConfig, ProfileAppearance, ProfileMe, StatisticsFocus } from './types'
 
 export async function fetchProfileMe(token: string): Promise<ProfileMe> {
   const profile = await authedGet<ProfileMe>('/profile/me', token)
@@ -34,6 +34,8 @@ export async function patchProfileMe(
     ai_config?: AIConfig | Record<string, any>
     /** 主币种(本位币),资产折算目标。与 mobile prefs `baseCurrency` 同步。 */
     primary_currency?: string
+    /** 只改变首页展示重点，不过滤收入或改动账单。 */
+    statistics_focus?: StatisticsFocus
   }
 ): Promise<ProfileMe> {
   const profile = await authedPatch<ProfileMe>('/profile/me', token, payload)

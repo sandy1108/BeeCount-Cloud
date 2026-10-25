@@ -89,6 +89,7 @@ class UserProfileOut(BaseModel):
     ai_config: dict | None = None
     # 用户主币种,ISO 4217 大写代码(如 CNY / USD / JPY)。None = 未设置。
     primary_currency: str | None = None
+    statistics_focus: Literal["balance", "expense"] = "balance"
 
 
 class UserProfilePatchRequest(BaseModel):
@@ -100,6 +101,8 @@ class UserProfilePatchRequest(BaseModel):
     appearance: dict | None = None
     ai_config: dict | None = None
     primary_currency: str | None = Field(default=None, pattern=r"^[A-Za-z]{3,8}$")
+    # null/省略均表示不修改；只控制展示，不改变收入或支出计算。
+    statistics_focus: Literal["balance", "expense"] | None = None
 
     @field_validator("display_name")
     @classmethod

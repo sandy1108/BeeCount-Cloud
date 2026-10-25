@@ -10,6 +10,7 @@ import {
 import type {
   ReadBudget,
   ReadLedger,
+  StatisticsFocus,
   WorkspaceAnalyticsAnomalyMonth,
   WorkspaceAnalyticsSeriesItem,
   WorkspaceAnalyticsSummary,
@@ -25,6 +26,7 @@ import { HeroInsightsRow } from './HeroInsightsRow'
 type HeroScope = 'month' | 'year' | 'all'
 
 interface Props {
+  statisticsFocus?: StatisticsFocus
   selectedScope?: HeroScope
   onScopeChange?: (scope: HeroScope) => void
   seasonYear?: number
@@ -49,6 +51,15 @@ interface Props {
 // 三个 scope 的 label/hint 在组件里 t() 时动态查,这里只留 value 列表
 const SCOPE_VALUES: HeroScope[] = ['month', 'year', 'all']
 
+/** 两种视角仅改变主曲线，原始收支分桶保持不变。支出不能减掉收入。 */
+export function prepareHeroTrend(series: WorkspaceAnalyticsSeriesItem[], focus: StatisticsFocus) {
+  let running = 0
+  return series.slice().sort((a, b) => a.bucket.localeCompare(b.bucket)).map((item) => {
+    running += focus === 'expense' ? (item.expense || 0) : (item.income || 0) - (item.expense || 0)
+    return { bucket: item.bucket, v: running }
+  })
+}
+
 /**
  * 首页 hero 卡。三视角切换（本月 / 今年 / 汇总）：
  * - 大号结余 = 对应 scope 的 income - expense（对齐 mobile `monthlyTotals` /
@@ -58,6 +69,7 @@ const SCOPE_VALUES: HeroScope[] = ['month', 'year', 'all']
  * - 右侧 sparkline: month 按日累计；year / all 按月累计
  */
 export function HomeHero({
+  statisticsFocus = 'balance',
   selectedScope, onScopeChange, seasonYear, onSeasonYearChange,
   ledgers,
   currentLedgerId,
@@ -74,6 +86,7 @@ export function HomeHero({
   hasEnoughMonthsForAnomaly
 }: Props) {
   const t = useT()
+  const expenseFocus = statisticsFocus === 'expense'
   const [localScope, setLocalScope] = useState<HeroScope>('month')
   const scope = selectedScope ?? localScope
   const setScope = onScopeChange ?? setLocalScope
@@ -101,6 +114,7 @@ export function HomeHero({
   const selectedSeason = seasonYear ?? currentSeason
   const scopeLabel = skiMode && scope === 'year' ? seasonLabel(selectedSeason, t('ski.suffix')) : t(`home.scope.${scope}`)
   const scopeBalanceHint = skiMode && scope === 'year' ? `${scopeLabel} · ${t('ski.balance')}` : t(`home.scope.${scope}.hint`)
+  const mainHint = expenseFocus ? t('home.hero.expense').replace('{scope}', scopeLabel) : scopeBalanceHint
   const seasonRange = skiMode && scope === 'year' ? `${selectedSeason}-10-01 ~ ${selectedSeason + 1}-04-30` : null
   const monthRangeLabel = scope === 'month' ? periodRangeText(ledgerMonthStartDay) : null
 
@@ -112,14 +126,7 @@ export function HomeHero({
   const days = ledgerCounts?.days_since_first_tx ?? 0
 
   // sparkline: 本月按日累计；年/全部按月累计。series 已按 bucket 分桶。
-  const trendData = useMemo(() => {
-    const sorted = activeSeries.slice().sort((a, b) => a.bucket.localeCompare(b.bucket))
-    let running = 0
-    return sorted.map((it) => {
-      running += (it.income || 0) - (it.expense || 0)
-      return { bucket: it.bucket, v: running }
-    })
-  }, [activeSeries])
+  const trendData = useMemo(() => prepareHeroTrend(activeSeries, statisticsFocus), [activeSeries, statisticsFocus])
 
   return (
     // overflow-visible:hero 内的 InsightsRow chip 用 popover 浮出详情,需要
@@ -180,16 +187,16 @@ export function HomeHero({
           </div>
 
           <div className="mt-4 text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-            {scopeBalanceHint}
+            {mainHint}
           </div>
           <Amount
-            value={balance}
+            value={expenseFocus ? expense : balance}
             showCurrency
             currency={currency}
             size="4xl"
             bold
             animate
-            tone={balance >= 0 ? 'positive' : 'negative'}
+            tone={expenseFocus ? 'negative' : balance >= 0 ? 'positive' : 'negative'}
             className="mt-1 block font-black tracking-tight"
           />
 
@@ -272,7 +279,7 @@ export function HomeHero({
         {/* 右侧：sparkline，随 scope 变 */}
         <div className="flex min-h-[220px] flex-col gap-2 rounded-xl border border-border/40 bg-background/40 p-3 backdrop-blur-sm">
           <div className="flex items-center justify-between text-[11px] uppercase tracking-wider text-muted-foreground">
-            <span>{t('home.hero.trend').replace('{scope}', scopeLabel)}</span>
+            <span>{t(expenseFocus ? 'home.hero.expenseTrend' : 'home.hero.trend').replace('{scope}', scopeLabel)}</span>
             {trendData.length > 0 ? (
               <span className="font-mono tabular-nums">
                 {trendData.length}
@@ -316,7 +323,7 @@ export function HomeHero({
                     formatter={
                       ((v: number) => [
                         v.toLocaleString(undefined, { maximumFractionDigits: 2 }),
-                        t('home.hero.balanceAccum')
+                        t(expenseFocus ? 'home.hero.expenseAccum' : 'home.hero.balanceAccum')
                       ]) as unknown as never
                     }
                     labelFormatter={(_label, payload) => {

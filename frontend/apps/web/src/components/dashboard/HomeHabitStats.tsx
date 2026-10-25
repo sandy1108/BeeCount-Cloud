@@ -1,10 +1,11 @@
 import { Flame, PiggyBank, Sparkles } from 'lucide-react'
 
-import type { WorkspaceAnalyticsSummary, WorkspaceLedgerCounts } from '@beecount/api-client'
+import type { StatisticsFocus, WorkspaceAnalyticsSummary, WorkspaceLedgerCounts } from '@beecount/api-client'
 import { Amount } from '@beecount/web-features'
 import { useT } from '@beecount/ui'
 
 interface Props {
+  statisticsFocus?: StatisticsFocus
   /** 本月 summary，用来算储蓄率、日均支出。 */
   monthSummary?: WorkspaceAnalyticsSummary
   /** 全量 counts，用来算平均每天/每笔。 */
@@ -20,7 +21,7 @@ interface Props {
  *
  * 目的：把用户"记账这件事本身"的行为数据做可视化，跟具体账目互补。
  */
-export function HomeHabitStats({ monthSummary, ledgerCounts, currency = 'CNY' }: Props) {
+export function HomeHabitStats({ monthSummary, ledgerCounts, currency = 'CNY', statisticsFocus = 'balance' }: Props) {
   const t = useT()
   const monthIncome = monthSummary?.income_total ?? 0
   const monthExpense = monthSummary?.expense_total ?? 0
@@ -40,9 +41,9 @@ export function HomeHabitStats({ monthSummary, ledgerCounts, currency = 'CNY' }:
   const avgTxPerDay = totalDays > 0 ? totalTx / totalDays : 0
 
   return (
-    <div className="grid gap-3 md:grid-cols-3">
+    <div className={`grid gap-3 ${statisticsFocus === 'expense' ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
       {/* 卡 1：储蓄率 */}
-      <div className="group relative overflow-hidden rounded-xl border border-income/30 bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+      {statisticsFocus === 'balance' && <div className="group relative overflow-hidden rounded-xl border border-income/30 bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
         <div
           className="pointer-events-none absolute inset-0 bg-gradient-to-br from-income/20 via-income/5 to-transparent"
           aria-hidden
@@ -98,7 +99,7 @@ export function HomeHabitStats({ monthSummary, ledgerCounts, currency = 'CNY' }:
               ? t('home.habit.savingRate.good').replace('{rate}', savingRate.toFixed(0))
               : t('home.habit.savingRate.bad')}
         </div>
-      </div>
+      </div>}
 
       {/* 卡 2：本月日均支出 */}
       <div className="group relative overflow-hidden rounded-xl border border-expense/30 bg-card p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">

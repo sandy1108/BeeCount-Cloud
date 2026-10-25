@@ -39,7 +39,7 @@ import {
   usePrimaryColor,
 } from '@beecount/ui'
 
-import { patchProfileMe, uploadProfileAvatar } from '@beecount/api-client'
+import { patchProfileMe, uploadProfileAvatar, type StatisticsFocus } from '@beecount/api-client'
 
 import { useAuth } from '../../context/AuthContext'
 import {
@@ -97,6 +97,7 @@ export function SettingsProfileAppearanceSection() {
   const [nameEditing, setNameEditing] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
   const [nameSaving, setNameSaving] = useState(false)
+  const [statisticsFocusSaving, setStatisticsFocusSaving] = useState(false)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   // 欢迎语随时段变化:每分钟刷一次 tick,刚好跨越 11/13/18/23 这些边界时
@@ -280,6 +281,21 @@ export function SettingsProfileAppearanceSection() {
       toast.error(localizeError(err, t))
     } finally {
       setPrimaryCurrencySaving(false)
+    }
+  }
+
+  // 单独更新用户偏好，不把本机外观JSON或账本周期一起写回。
+  const handleStatisticsFocusChange = async (focus: StatisticsFocus) => {
+    if (statisticsFocusSaving || focus === (profileMe?.statistics_focus ?? 'balance')) return
+    setStatisticsFocusSaving(true)
+    try {
+      await patchProfileMe(token, { statistics_focus: focus })
+      await refreshProfile()
+      toast.success(t('notice.profileUpdated'))
+    } catch (err) {
+      toast.error(localizeError(err, t))
+    } finally {
+      setStatisticsFocusSaving(false)
     }
   }
 
@@ -657,6 +673,26 @@ export function SettingsProfileAppearanceSection() {
               </div>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      <Card className="bc-panel">
+        <CardHeader>
+          <CardTitle className="text-base" id="statistics-focus-label">{t('settings.statisticsFocus')}</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-wrap items-center justify-between gap-4">
+          <p id="statistics-focus-hint" className="max-w-2xl text-xs leading-relaxed text-muted-foreground">{t('settings.statisticsFocus.hint')}</p>
+          <Select value={profileMe?.statistics_focus ?? 'balance'}
+            onValueChange={(value) => void handleStatisticsFocusChange(value as StatisticsFocus)}
+            disabled={statisticsFocusSaving || !profileMe}>
+            <SelectTrigger aria-labelledby="statistics-focus-label" aria-describedby="statistics-focus-hint" className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="balance">{t('settings.statisticsFocus.balance')}</SelectItem>
+              <SelectItem value="expense">{t('settings.statisticsFocus.expense')}</SelectItem>
+            </SelectContent>
+          </Select>
         </CardContent>
       </Card>
 

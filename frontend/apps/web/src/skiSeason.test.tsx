@@ -16,20 +16,31 @@ describe('ski season', () => {
     expect(seasonLabel(2025)).toBe('25~26雪季')
     expect(seasonMonths(2025)).toEqual(['2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04'])
   })
-  it('shows three flat common buttons plus a separate history menu', () => {
+  it('shows four flat common buttons and reserves history for older seasons', () => {
     const html = renderToStaticMarkup(<LocaleProvider dictionaries={dictionaries}>
       <SkiSeasonControls scope="year" currentYear={2026} selectedYear={2024} firstYear={2023}
         onScopeChange={() => {}} onYearChange={() => {}} />
     </LocaleProvider>)
     expect(html).toContain('本月')
     expect(html).toContain('本雪季')
+    expect(html).toContain('上个雪季')
     expect(html).toContain('汇总')
     expect(html).toContain('历史雪季')
     expect(html).toContain('23~24雪季')
     expect(html).toContain('24~25雪季')
     expect(html).not.toContain('今年')
-    expect((html.match(/<button/g) || []).length).toBe(3)
+    expect((html.match(/<button/g) || []).length).toBe(4)
+    expect(html).not.toContain('<option value="2025"')
     expect(html).toContain('value="2024" selected')
+  })
+  it('selects only the previous-season button, leaving history unselected', () => {
+    const html = renderToStaticMarkup(<LocaleProvider dictionaries={dictionaries}>
+      <SkiSeasonControls scope="year" currentYear={2026} selectedYear={2025} firstYear={2023}
+        onScopeChange={() => {}} onYearChange={() => {}} />
+    </LocaleProvider>)
+    expect(html).toMatch(/aria-pressed="true"[^>]*>上个雪季/)
+    expect((html.match(/aria-pressed="true"/g) || [])).toHaveLength(1)
+    expect(html).toContain('value="" disabled="" selected=""')
   })
 })
 

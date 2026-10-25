@@ -11,6 +11,7 @@ import { useT } from '@beecount/ui'
 import type { BudgetUsage } from '@beecount/web-features'
 
 import { useLedgers } from '../../context/LedgersContext'
+import { useAuth } from '../../context/AuthContext'
 import {
   dispatchOpenDetailAccount,
   dispatchOpenDetailTag,
@@ -84,6 +85,8 @@ export function OverviewSection({
   onCategoryClickFromTop,
 }: Props) {
   const t = useT()
+  const { profileMe } = useAuth()
+  const statisticsFocus = profileMe?.statistics_focus === 'expense' ? 'expense' : 'balance'
   const { ledgers, activeLedgerId, currency, currentLedger } = useLedgers()
   const skiMode = currentLedger?.statistics_mode === 'ski_season'
   const periodTitle = skiMode ? (selectedScope === 'year' ? seasonLabel(seasonYear, t('ski.suffix')) : t(`home.scope.${selectedScope}`)) : undefined
@@ -98,6 +101,7 @@ export function OverviewSection({
   return (
     <div className="space-y-4">
       <HomeHero
+        statisticsFocus={statisticsFocus}
         selectedScope={selectedScope}
         onScopeChange={onScopeChange}
         seasonYear={seasonYear}
@@ -119,6 +123,7 @@ export function OverviewSection({
 
       {skiMode && <p className="text-xs text-muted-foreground">{t('ski.scopeHint')}</p>}
       <HomeHabitStats
+        statisticsFocus={statisticsFocus}
         monthSummary={currentMonthSummary || undefined}
         ledgerCounts={ledgerCounts || undefined}
         currency={currency}

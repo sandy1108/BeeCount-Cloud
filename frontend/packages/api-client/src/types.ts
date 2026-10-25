@@ -89,6 +89,8 @@ export type AIConfig = {
 /** 内置「智谱GLM」provider id —— 跟 mobile `zhipuDefault.id` 对齐,删除 fallback 用。 */
 export const BUILTIN_PROVIDER_ID = 'zhipu_glm'
 
+export type StatisticsFocus = 'balance' | 'expense'
+
 export type ProfileMe = {
   user_id: string
   email: string
@@ -112,6 +114,8 @@ export type ProfileMe = {
   ai_config?: Record<string, any> | null
   /** 主币种(本位币),资产折算目标。mobile prefs `baseCurrency` 同步而来。 */
   primary_currency?: string | null
+  /** 用户全局统计展示视角；旧服务缺字段时按结余展示。 */
+  statistics_focus?: StatisticsFocus
 }
 
 export type WriteCommitMeta = {

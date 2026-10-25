@@ -100,6 +100,10 @@ class UserProfile(Base):
     # `baseCurrency`,PATCH /profile/me key `primary_currency`。大写 ISO 代码,
     # 预留 16 位对齐既有币种列宽。null = 客户端按自己的规则初始化,server 不猜。
     primary_currency: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # 用户全局展示偏好，独立于账本周期与外观JSON；旧客户端省略时保持原值。
+    statistics_focus: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="balance", server_default="balance"
+    )
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
