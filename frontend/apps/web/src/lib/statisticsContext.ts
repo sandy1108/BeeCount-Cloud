@@ -3,8 +3,9 @@ export type StatisticsContext = {
   ledgerId: string
   ledgerName: string
   currency: string
-  categoryGroup: string
-  txType: 'income' | 'expense'
+  categoryGroup?: string
+  /** cashflow用于整月收支，明确排除转账，不用空类型暗示统计口径。 */
+  txType: 'income' | 'expense' | 'cashflow'
   dateFrom?: string
   dateTo?: string
   periodLabel: string
@@ -27,8 +28,8 @@ export function parseStatisticsContext(search: URLSearchParams): StatisticsConte
   try {
     const value = JSON.parse(search.get('stats') || 'null') as StatisticsContext | null
     if (!value || typeof value.ledgerId !== 'string' || !value.ledgerId ||
-      value.ledgerId !== search.get('ledger') || typeof value.categoryGroup !== 'string' ||
-      !['expense', 'income'].includes(value.txType) || typeof value.ledgerName !== 'string' ||
+      value.ledgerId !== search.get('ledger') || (value.categoryGroup !== undefined && typeof value.categoryGroup !== 'string') ||
+      !['expense', 'income', 'cashflow'].includes(value.txType) || typeof value.ledgerName !== 'string' ||
       typeof value.currency !== 'string' || typeof value.periodLabel !== 'string' ||
       typeof value.naturalMonth !== 'boolean' || !Number.isInteger(value.tzOffsetMinutes) ||
       value.tzOffsetMinutes < -720 || value.tzOffsetMinutes > 840) return null

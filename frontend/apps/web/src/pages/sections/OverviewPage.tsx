@@ -321,6 +321,13 @@ function OverviewContent({ scope, seasonYear, onScopeChange, onSeasonYearChange 
     }, [categories, homeContext, activeLedgerId, currentLedger],
   )
   const scopeContext = homeContext('', 'expense')
+  const onMonthClick = useCallback((month: string) => {
+    const parent = homeContext('', 'expense')
+    if (!parent?.naturalMonth) return
+    const next = new URLSearchParams(window.location.search)
+    next.set('monthStats', JSON.stringify({ parent: { ...parent, categoryGroup: undefined, txType: 'cashflow' }, month }))
+    navigate({ search: `?${next}` }, { preventScrollReset: true })
+  }, [homeContext, navigate])
 
   // PWA dock badge:统计本月超支预算条数,写到 navigator.setAppBadge。
   // 用户安装 PWA 后,即使应用没在前台,dock 图标也会显示一个小红点(数字),
@@ -376,6 +383,7 @@ function OverviewContent({ scope, seasonYear, onScopeChange, onSeasonYearChange 
       }}
       onCategoryClickFromTop={onCategoryClickFromHome}
       statisticsScopeLabel={scopeContext ? statisticsRangeLabel(scopeContext) : undefined}
+      onMonthClick={skiMode && scope !== 'month' ? onMonthClick : undefined}
     />
   )
 }

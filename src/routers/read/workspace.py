@@ -78,9 +78,7 @@ def list_workspace_transactions(
 
     # 组装 projection query:filter + sort + paginate 全交给 SQL + index
     query = select(ReadTxProjection).where(ReadTxProjection.ledger_id.in_(ledger_internal_ids))
-    query = query.where(*statistics_filters(db, category_group=category_group, statistics_only=statistics_only))
-    if tx_type:
-        query = query.where(ReadTxProjection.tx_type == tx_type)
+    query = query.where(*statistics_filters(db, category_group=category_group, statistics_only=statistics_only, tx_type=tx_type))
     if account_name:
         pattern = f"%{account_name}%"
         query = query.where(or_(
@@ -389,9 +387,7 @@ def export_workspace_transactions_csv(
         else:
             query = query.where(false_literal())
     else:
-        query = query.where(*statistics_filters(db, category_group=category_group, statistics_only=statistics_only))
-        if tx_type:
-            query = query.where(ReadTxProjection.tx_type == tx_type)
+        query = query.where(*statistics_filters(db, category_group=category_group, statistics_only=statistics_only, tx_type=tx_type))
         if account_name:
             pattern = f"%{account_name}%"
             query = query.where(or_(
@@ -502,8 +498,13 @@ def export_workspace_transactions_csv(
         local_now = datetime.now(timezone.utc) + tz_delta
         period_segment = local_now.strftime("%Y%m%d-%H%M%S")
     else:
-        period_from = date_from.isoformat()[:10] if date_from else "all"
-        period_to = date_to.isoformat()[:10] if date_to else "all"
+        if statistics_only:
+            # 统计下钻保存UTC半开边界；文件名展示界面时区的首末日，避免六月导出标成五月。
+            period_from = (_to_utc(date_from) + tz_delta).strftime("%Y-%m-%d") if date_from else "all"
+            period_to = (_to_utc(date_to) + tz_delta - timedelta(microseconds=1)).strftime("%Y-%m-%d") if date_to else "all"
+        else:
+            period_from = date_from.isoformat()[:10] if date_from else "all"
+            period_to = date_to.isoformat()[:10] if date_to else "all"
         period_segment = f"{period_from}_{period_to}"
     filename = f"beecount-{primary_name}-{period_segment}.csv"
     ascii_filename = filename.encode("ascii", "replace").decode("ascii")

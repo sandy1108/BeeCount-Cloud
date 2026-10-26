@@ -1624,7 +1624,7 @@ export function TransactionsPage() {
                   ml-auto 套在右组上(而不是单按钮),即便其中一个 button 隐藏
                   另一个仍会贴右,不会跟左组贴在一起。 */}
               {statisticsContext && <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs">
-                <p className="min-w-0 flex-1 text-muted-foreground">{statisticsRangeLabel(statisticsContext)} · {statisticsContext.categoryGroup} · {t(`enum.txType.${statisticsContext.txType}`)} · {t('statistics.basis')}</p>
+                <p className="min-w-0 flex-1 text-muted-foreground">{statisticsRangeLabel(statisticsContext)}{statisticsContext.categoryGroup !== undefined ? ` · ${statisticsContext.categoryGroup}` : ''} · {t(`enum.txType.${statisticsContext.txType}`)} · {t('statistics.basis')}</p>
                 <Button size="sm" variant="outline" onClick={() => _navigate(statisticsLink(statisticsContext, '/app/attachments'))}>{t('statistics.attachments')}</Button>
                 <Button size="sm" variant="ghost" onClick={clearStatisticsContext}>{t('statistics.clear')}</Button>
               </div>}
@@ -1711,7 +1711,7 @@ export function TransactionsPage() {
                             amountMax: filter.amountMax
                               ? Number(filter.amountMax)
                               : undefined,
-                            ...(statisticsContext ? statisticsQuery(statisticsContext) : {}),
+                            ...(statisticsContext ? { ...statisticsQuery(statisticsContext), tzOffsetMinutes: statisticsContext.tzOffsetMinutes } : {}),
                             lang: locale,
                           })
                           toast.success(t('export.csv.success'))

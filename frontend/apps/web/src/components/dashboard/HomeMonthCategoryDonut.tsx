@@ -9,6 +9,7 @@ interface Props {
   ranks: WorkspaceAnalyticsCategoryRank[]
   currency?: string
   title?: string
+  kind?: 'expense' | 'income'
   onSelectCategory?: (name: string) => void
 }
 
@@ -31,7 +32,7 @@ export function prepareCategoryDonut(ranks: WorkspaceAnalyticsCategoryRank[]) {
  * "其他"。参考 `AccountsPanel.AssetsCompositionMini`，同样风格避免引入 recharts
  * 分段饼图的多余依赖。
  */
-export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title, onSelectCategory }: Props) {
+export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title, kind = 'expense', onSelectCategory }: Props) {
   const t = useT()
   const otherLabel = t('home.monthDonut.other')
   const { slices, rest, total, categoryCount } = useMemo(() => prepareCategoryDonut(ranks), [ranks])
@@ -64,7 +65,7 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title, onSelec
             value={total}
             currency={currency}
             size="xs"
-            tone="negative"
+            tone={kind === 'income' ? 'positive' : 'negative'}
             bold
             className="inline"
           />
@@ -73,7 +74,7 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title, onSelec
       <CardContent>
         {slices.length === 0 ? (
           <div className="flex h-48 items-center justify-center text-xs text-muted-foreground">
-            {title ? t('ski.noExpense') : t('home.monthDonut.empty')}
+            {kind === 'income' ? t('month.noIncome') : title ? t('ski.noExpense') : t('home.monthDonut.empty')}
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-5">
@@ -86,14 +87,14 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title, onSelec
               <div className="absolute inset-[18%] rounded-full bg-card" aria-hidden />
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  {title ? t('ski.categories') : t('home.monthDonut.center')}
+                  {kind === 'income' ? t('month.incomeCategories') : title ? t('ski.categories') : t('home.monthDonut.center')}
                 </div>
                 <Amount
                   value={total}
                   currency={currency}
                   size="sm"
                   bold
-                  tone="negative"
+                  tone={kind === 'income' ? 'positive' : 'negative'}
                   className="mt-0.5"
                 />
                 <div className="mt-0.5 text-[10px] text-muted-foreground">
@@ -135,7 +136,7 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title, onSelec
           <summary className="cursor-pointer text-xs font-semibold text-foreground">
             {t('home.monthDonut.otherDetails').replace('{count}', String(rest.length))}
           </summary>
-          <p className="mt-2 text-[11px] text-muted-foreground">{t('home.monthDonut.otherHint')}</p>
+          <p className="mt-2 text-[11px] text-muted-foreground">{t(kind === 'income' ? 'month.incomeOtherHint' : 'home.monthDonut.otherHint')}</p>
           <ul className="mt-3 space-y-2">
             {rest.map((row, index) => <li key={index} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
               <button type="button" disabled={!onSelectCategory} onClick={() => onSelectCategory?.(row.category_name)} className="min-w-0 flex-1 break-words text-left enabled:hover:underline enabled:focus-visible:ring-2 enabled:focus-visible:ring-ring">{row.category_name || t('home.monthDonut.uncategorized')}</button>

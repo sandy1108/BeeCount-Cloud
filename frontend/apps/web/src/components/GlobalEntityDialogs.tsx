@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 
 import {
   fetchWorkspaceTags,
@@ -18,6 +18,7 @@ import { useAuth } from '../context/AuthContext'
 import { useLedgers } from '../context/LedgersContext'
 import {
   dispatchOpenEditCategory,
+  dispatchOpenDetailCategory,
   dispatchOpenEditTx,
   onOpenDetailAccount,
   onOpenDetailCategory,
@@ -31,6 +32,7 @@ import { AccountDetailDialog } from './dialogs/AccountDetailDialog'
 import { CategoryDetailDialog } from './dialogs/CategoryDetailDialog'
 import { TagDetailDialog } from './dialogs/TagDetailDialog'
 import { TransactionDetailDialog } from './dialogs/TransactionDetailDialog'
+import { MonthStatisticsDialog } from './dialogs/MonthStatisticsDialog'
 
 const DETAIL_PAGE_SIZE = 50
 /**
@@ -49,6 +51,9 @@ const DETAIL_PAGE_SIZE = 50
  */
 export function GlobalEntityDialogs() {
   const navigate = useNavigate()
+  const location = useLocation()
+  const [params, setParams] = useSearchParams()
+  const monthOpen = location.pathname === '/app/overview' && params.has('monthStats')
   const { token } = useAuth()
   const { activeLedgerId, currentLedger, currency: activeCurrency } = useLedgers()
   const { previewMap: iconPreviewByFileId, resolvePreview } = useAttachmentCache()
@@ -357,7 +362,12 @@ export function GlobalEntityDialogs() {
       />
       <CategoryDetailDialog
         onPreviewAttachment={previewAttachment}
-        category={category}
+        category={monthOpen || (categoryContext && location.pathname !== '/app/overview') ? null : category}
+        onSelectMonth={categoryContext ? month => {
+          const next = new URLSearchParams(params)
+          next.set('monthStats', JSON.stringify({ parent: categoryContext, month }))
+          setParams(next, { preventScrollReset: true })
+        } : undefined}
         scope={categoryScope}
         onScopeChange={handleCategoryScopeChange}
         currency={categoryContext?.currency ?? activeCurrency}
@@ -388,6 +398,14 @@ export function GlobalEntityDialogs() {
         onEdit={handleEditCategory}
         onJumpToTransactions={handleJumpToTransactions}
       />
+      <MonthStatisticsDialog onReturnToParent={({ parent }) => {
+        if (category || parent.categoryGroup === undefined || parent.txType === 'cashflow') return
+        // 刷新月份深链后也能还原上一级精确分类，不凭名称挑任意分类ID。
+        dispatchOpenDetailCategory({ id: '__statistics_group__', name: parent.categoryGroup, kind: parent.txType,
+          level: 1, sort_order: null, icon: null, icon_type: null, parent_name: null, last_change_id: 0,
+          ledger_id: parent.ledgerId, ledger_name: parent.ledgerName, created_by_user_id: null, created_by_email: null,
+        }, { defaultScope: 'current', statisticsContext: parent })
+      }} />
       <TagDetailDialog
         tag={tag}
         scope={tagScope}

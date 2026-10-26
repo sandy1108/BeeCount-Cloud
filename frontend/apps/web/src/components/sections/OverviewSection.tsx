@@ -51,6 +51,7 @@ interface Props {
   /** Top 卡片点击分类名时的钩子 — page 端反查 WorkspaceCategory 后派发详情。
    *  没传则 Top 卡片回退到 onJumpToTransactionsWithQuery。 */
   statisticsScopeLabel?: string
+  onMonthClick?: (month: string) => void
   onCategoryClickFromTop?: (name: string, kind: 'expense' | 'income', source?: 'main' | 'month') => void
 }
 
@@ -83,7 +84,7 @@ export function OverviewSection({
   budgets,
   budgetUsageById,
   onJumpToTransactionsWithQuery,
-  onCategoryClickFromTop, statisticsScopeLabel,
+  onCategoryClickFromTop, statisticsScopeLabel, onMonthClick,
 }: Props) {
   const t = useT()
   const { profileMe } = useAuth()
@@ -142,12 +143,12 @@ export function OverviewSection({
 
       <div className="grid gap-4 lg:grid-cols-2">
         <HomeMonthCategoryDonut onSelectCategory={onCategoryClickFromTop ? name => onCategoryClickFromTop(name, 'expense', 'month') : undefined} ranks={skiMode ? analyticsData?.category_ranks || [] : currentMonthCategoryRanks} currency={currency} title={periodTitle ? `${periodTitle} · ${t('ski.categories')}` : undefined} />
-        <HomeYearHeatmap yearSeries={currentYearSeries} currency={currency} buckets={buckets} title={periodTitle ? `${periodTitle} · ${t('ski.distribution')}` : undefined} />
+        <HomeYearHeatmap onMonthClick={onMonthClick} yearSeries={currentYearSeries} currency={currency} buckets={buckets} title={periodTitle ? `${periodTitle} · ${t('ski.distribution')}` : undefined} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <AssetCompositionDonut accounts={accounts} />
-        <MonthlyTrendBars showAll={skiMode} data={analyticsData?.series || []} title={periodTitle ? `${periodTitle} · ${t('ski.trend')}` : undefined} />
+        <MonthlyTrendBars onMonthClick={onMonthClick} showAll={skiMode} data={analyticsData?.series || []} title={periodTitle ? `${periodTitle} · ${t('ski.trend')}` : undefined} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

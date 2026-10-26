@@ -24,6 +24,7 @@ import { formatCompactTick } from '../../i18n/format'
 import type { DetailScope } from '../../lib/txDialogEvents'
 import { statisticsRangeLabel, type StatisticsContext } from '../../lib/statisticsContext'
 import { DetailScopeToggle } from './DetailScopeToggle'
+import { MonthDrilldownLinks } from '../dashboard/MonthDrilldownLinks'
 import {
   Bar,
   BarChart,
@@ -41,6 +42,7 @@ interface Props {
   trendBuckets?: string[]
   statsError?: boolean
   onRetry?: () => void
+  onSelectMonth?: (month: string) => void
   category: WorkspaceCategory | null
   /** 账本作用域:'all' 跨账本聚合,'current' 仅当前账本。控制交易列表 +
    *  统计的 ledger filter,顶部 toggle 可切换。 */
@@ -97,7 +99,7 @@ interface StatsAgg {
  */
 export function CategoryDetailDialog({
   category,
-  serverStats, statisticsContext, trendBuckets, statsError, onRetry,
+  serverStats, statisticsContext, trendBuckets, statsError, onRetry, onSelectMonth,
   scope,
   onScopeChange,
   currency,
@@ -246,6 +248,7 @@ export function CategoryDetailDialog({
                 startDay={ledgerMonthStartDay}
                 buckets={trendBuckets}
                 exactRange={Boolean(statisticsContext)}
+                onSelectMonth={statisticsContext?.naturalMonth && !statsLoading && !statsError ? onSelectMonth : undefined}
               />
 
               <div className="grid gap-4 border-b border-border/60 px-6 py-4 sm:grid-cols-2">
@@ -406,7 +409,7 @@ function TrendBars({
   currency,
   t,
   chinese,
-  startDay = 1, buckets, exactRange,
+  startDay = 1, buckets, exactRange, onSelectMonth,
 }: {
   monthly: { bucket: string; amount: number; count: number }[]
   kind: WorkspaceCategory['kind']
@@ -416,6 +419,7 @@ function TrendBars({
   startDay?: number
   buckets?: string[]
   exactRange?: boolean
+  onSelectMonth?: (month: string) => void
 }) {
   // 取最近 12 个月。如果不足 12 期,补空格保证轴长度一致,视觉上能看出"才记账几个月"。
   const slice = useMemo(() => {
@@ -467,7 +471,8 @@ function TrendBars({
           </div>
         ) : (
           <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={slice} margin={{ left: 0, right: 4, top: 4, bottom: 0 }}>
+            <BarChart data={slice} margin={{ left: 0, right: 4, top: 4, bottom: 0 }}
+              onClick={state => { if (typeof state.activeLabel === 'string') onSelectMonth?.(state.activeLabel) }}>
               <CartesianGrid
                 strokeDasharray="3 3"
                 stroke="hsl(var(--border))"
@@ -525,6 +530,7 @@ function TrendBars({
       <p className="mt-1 text-[10px] text-muted-foreground">
         {t(exactRange ? 'statistics.trendHint' : 'detail.category.trend.hint')}
       </p>
+      {onSelectMonth && <MonthDrilldownLinks buckets={slice.map(row => row.bucket)} onSelect={onSelectMonth} />}
     </div>
   )
 }

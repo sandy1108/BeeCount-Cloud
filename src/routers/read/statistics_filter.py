@@ -15,7 +15,8 @@ def statistics_filters(db, *, category_group=None, statistics_only=False, tx_typ
     if statistics_only:
         conditions.append(columns.exclude_from_stats == false())
     if tx_type:
-        conditions.append(columns.tx_type == tx_type)
+        # 整月收支与其分页/CSV/附件共用这个条件，避免汇总排除转账而明细混入。
+        conditions.append(columns.tx_type.in_(("income", "expense")) if tx_type == "cashflow" else columns.tx_type == tx_type)
     if date_from is not None:
         conditions.append(columns.happened_at >= date_from)
     if date_to is not None:

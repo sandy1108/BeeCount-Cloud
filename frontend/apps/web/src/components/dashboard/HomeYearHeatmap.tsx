@@ -11,13 +11,14 @@ interface Props {
   currency?: string
   buckets?: string[]
   title?: string
+  onMonthClick?: (month: string) => void
 }
 
 /**
  * 12 个月支出热力条：用当月支出的相对大小染色，把"今年哪几个月花得最多"
  * 一眼能看出。对比之下 MonthlyTrendBars 只展示最近 6 期，这里补齐整年。
  */
-export function HomeYearHeatmap({ yearSeries, currency = 'CNY', buckets, title }: Props) {
+export function HomeYearHeatmap({ yearSeries, currency = 'CNY', buckets, title, onMonthClick }: Props) {
   const t = useT()
   const data = useMemo(() => {
     const year = new Date().getFullYear()
@@ -63,6 +64,7 @@ export function HomeYearHeatmap({ yearSeries, currency = 'CNY', buckets, title }
         <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
           {data.rows.map((row) => {
             const future = Boolean(buckets) && isFutureBucket(row.bucket)
+            const clickable = Boolean(onMonthClick && /^\d{4}-\d{2}$/.test(row.bucket))
             const pct = data.maxExpense > 0 ? row.expense / data.maxExpense : 0
             const bg =
               pct === 0
@@ -73,9 +75,14 @@ export function HomeYearHeatmap({ yearSeries, currency = 'CNY', buckets, title }
             return (
               <div
                 key={row.monthIndex}
+                role={clickable ? 'button' : undefined}
+                tabIndex={clickable ? 0 : undefined}
+                aria-label={clickable ? `${t('month.open')} ${row.bucket}` : undefined}
+                onClick={clickable ? () => onMonthClick?.(row.bucket) : undefined}
+                onKeyDown={clickable ? event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onMonthClick?.(row.bucket) } } : undefined}
                 className={`group relative flex min-w-0 flex-col gap-0.5 rounded-lg border px-2 py-2 ${
                   isCurrent ? 'border-primary ring-1 ring-primary/40' : 'border-border/40'
-                }`}
+                } ${clickable ? 'cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary hover:ring-2 hover:ring-primary/40' : ''}`}
                 style={{ background: bg }}
               >
                 {/* 之前还挂了 title={...} 做 native 兜底,但 native tooltip + CSS

@@ -14,18 +14,21 @@ import {
 import { Card, CardContent, CardHeader, CardTitle, useLocale, useT } from '@beecount/ui'
 
 import { formatCompactTick } from '../../i18n/format'
+import { MonthDrilldownLinks } from './MonthDrilldownLinks'
 
 interface SeriesItem {
   bucket: string
   expense: number
   income: number
   balance: number
+  count?: number
 }
 
 interface Props {
   data: SeriesItem[]
   title?: string
   showAll?: boolean
+  onMonthClick?: (month: string) => void
 }
 
 // 固定取最近 N 个月。原来有 6 / 12 / 24 期切换,但 server.series 通常只
@@ -49,7 +52,7 @@ export function prepareTrendSeries(data: SeriesItem[], showAll = false) {
  * 数据源是后端已经聚合好的 `analyticsData.series`(YYYY-MM bucket),前端只
  * 切片 + 计算 balance(不依赖 server.balance 字段,保险用 income-expense 算)。
  */
-export function MonthlyTrendBars({ data, title, showAll = false }: Props) {
+export function MonthlyTrendBars({ data, title, showAll = false, onMonthClick }: Props) {
   const t = useT()
   const { locale } = useLocale()
   const chinese = locale.startsWith('zh')
@@ -80,7 +83,8 @@ export function MonthlyTrendBars({ data, title, showAll = false }: Props) {
         ) : (
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={slice} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}>
+              <ComposedChart data={slice} margin={{ left: 0, right: 8, top: 8, bottom: 0 }}
+                onClick={state => { if (typeof state.activeLabel === 'string' && /^\d{4}-\d{2}$/.test(state.activeLabel)) onMonthClick?.(state.activeLabel) }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
                 <XAxis
                   dataKey="bucket"
@@ -97,7 +101,11 @@ export function MonthlyTrendBars({ data, title, showAll = false }: Props) {
                   }
                 />
                 <Tooltip
-                  labelFormatter={value => `${value}${showAll && isFutureBucket(String(value)) ? ` · ${t('statistics.futureRecorded')}` : ''}`}
+                  labelFormatter={value => {
+                    const row = slice.find(item => item.bucket === String(value))
+                    const recorded = Boolean(row?.income || row?.expense || row?.count)
+                    return `${value}${showAll && isFutureBucket(String(value)) ? ` · ${t(recorded ? 'statistics.futureRecorded' : 'statistics.future')}` : ''}`
+                  }}
                   contentStyle={{
                     background: 'hsl(var(--popover))',
                     border: '1px solid hsl(var(--border))',
@@ -155,6 +163,7 @@ export function MonthlyTrendBars({ data, title, showAll = false }: Props) {
           </div>
         )}
         {showAll && slice.some(row => isFutureBucket(row.bucket)) && <p className="mt-2 text-[11px] text-muted-foreground">* {t('statistics.futureHint')}</p>}
+        {onMonthClick && <MonthDrilldownLinks buckets={slice.map(row => row.bucket)} onSelect={onMonthClick} />}
       </CardContent>
     </Card>
   )

@@ -14,6 +14,7 @@ import type {
   SharedResourcesBundle,
   WorkspaceAccount,
   WorkspaceAnalytics,
+  WorkspaceAnalyticsCategoryRank,
   WorkspaceCategory,
   WorkspaceLedgerCounts,
   WorkspaceTag,
@@ -439,6 +440,27 @@ export type CategoryStatistics = {
   topAccounts: { name: string; amount: number; count: number }[]
   topTags: { name: string; color: string | null; amount: number; count: number }[]
   peak: { bucket: string; amount: number } | null
+}
+
+export type MonthStatistics = {
+  summary: { income: number; expense: number; balance: number; count: number }
+  daily: { bucket: string; income: number; expense: number; balance: number; count: number }[]
+  expenseCategories: WorkspaceAnalyticsCategoryRank[]
+  incomeCategories: WorkspaceAnalyticsCategoryRank[]
+  topAccounts: { name: string; amount: number; count: number }[]
+  topTags: { name: string; amount: number; count: number }[]
+}
+
+/** 月汇总与明细使用同一不可变时间快照；这里不重新计算设备本地日期。 */
+export async function fetchMonthStatistics(token: string, options: {
+  ledgerId: string; dateFrom: string; dateTo: string; txType: string
+  categoryGroup?: string; tzOffsetMinutes: number
+}): Promise<MonthStatistics> {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(options)) {
+    if (value !== undefined) query.set(key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`), String(value))
+  }
+  return authedGet<MonthStatistics>(`/read/workspace/month-statistics?${query}`, token)
 }
 export async function fetchCategoryStatistics(token: string, options: {
   ledgerId?: string; categorySyncId?: string; categoryGroup?: string; txType?: string
