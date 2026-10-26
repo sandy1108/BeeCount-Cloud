@@ -123,9 +123,9 @@ export function AppHeader({ onOpenLogs, onOpenAbout }: Props) {
                 </p>
                 <span
                   className="mt-0.5 font-mono text-[9px] text-muted-foreground/70 md:mt-0 md:text-[10px]"
-                  title={`BeeCount Cloud v${__APP_VERSION__}`}
+                  title={`BeeCount Cloud ${__APP_VERSION__.replace(/^v?/, 'v')}`}
                 >
-                  v{__APP_VERSION__}
+                  {__APP_VERSION__.replace(/^v?/, 'v')}
                 </span>
               </div>
             </button>

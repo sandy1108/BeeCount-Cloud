@@ -1,3 +1,4 @@
+import { isFutureBucket } from '../../lib/skiSeason'
 import { useMemo } from 'react'
 import {
   Bar,
@@ -60,7 +61,7 @@ export function MonthlyTrendBars({ data, title, showAll = false }: Props) {
 
   // 12 期 x 轴 label 直接用月份末位(MM),完整 bucket 由 tooltip 提供
   const xTickFormatter = (bucket: string): string => {
-    if (showAll) return bucket
+    if (showAll) return isFutureBucket(bucket) ? `${bucket}*` : bucket
     const parts = bucket.split('-')
     if (parts.length >= 2) return parts.slice(1).join('-')
     return bucket
@@ -96,6 +97,7 @@ export function MonthlyTrendBars({ data, title, showAll = false }: Props) {
                   }
                 />
                 <Tooltip
+                  labelFormatter={value => `${value}${showAll && isFutureBucket(String(value)) ? ` · ${t('statistics.futureRecorded')}` : ''}`}
                   contentStyle={{
                     background: 'hsl(var(--popover))',
                     border: '1px solid hsl(var(--border))',
@@ -152,6 +154,7 @@ export function MonthlyTrendBars({ data, title, showAll = false }: Props) {
             </ResponsiveContainer>
           </div>
         )}
+        {showAll && slice.some(row => isFutureBucket(row.bucket)) && <p className="mt-2 text-[11px] text-muted-foreground">* {t('statistics.futureHint')}</p>}
       </CardContent>
     </Card>
   )

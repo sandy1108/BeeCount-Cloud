@@ -34,11 +34,12 @@ export type GalleryAttachmentPage = {
 }
 
 export function fetchGalleryAttachments(token: string, options: {
-  ledgerId: string; q?: string; categorySyncId?: string; dateFrom?: string; dateTo?: string
+  ledgerId: string; q?: string; categorySyncId?: string; categoryGroup?: string; statisticsOnly?: boolean; txType?: string; dateFrom?: string; dateTo?: string
   limit?: number; offset?: number
 }): Promise<GalleryAttachmentPage> {
   const query = new URLSearchParams({ ledger_id: options.ledgerId })
   for (const [key, value] of Object.entries({ q: options.q, category_sync_id: options.categorySyncId,
+    category_group: options.categoryGroup, statistics_only: options.statisticsOnly, tx_type: options.txType,
     date_from: options.dateFrom, date_to: options.dateTo, limit: options.limit, offset: options.offset })) {
     if (value !== undefined && value !== '') query.set(key, String(value))
   }

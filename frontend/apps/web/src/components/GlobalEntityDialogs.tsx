@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 import {
   fetchWorkspaceTags,
+  fetchCategoryStatistics,
+  type CategoryStatistics,
   fetchWorkspaceTransactions,
   type WorkspaceAccount,
   type WorkspaceCategory,
@@ -23,17 +25,14 @@ import {
   onOpenDetailTx,
   type DetailScope,
 } from '../lib/txDialogEvents'
+import { statisticsLink, statisticsQuery, statisticsMonths, type StatisticsContext } from '../lib/statisticsContext'
+import { useSyncRefresh } from '../context/SyncSocketContext'
 import { AccountDetailDialog } from './dialogs/AccountDetailDialog'
 import { CategoryDetailDialog } from './dialogs/CategoryDetailDialog'
 import { TagDetailDialog } from './dialogs/TagDetailDialog'
 import { TransactionDetailDialog } from './dialogs/TransactionDetailDialog'
 
 const DETAIL_PAGE_SIZE = 50
-// CategoryDetail 的 stats batch 上限。单账本单分类的交易量上限,950 以下场景
-// 拉一次就能拿全;超过则在 UI 提示用户精度被截断。1000 是 server 的硬上限,
-// 留 50 缓冲避免边界 off-by-one。
-const CATEGORY_STATS_LIMIT = 1000
-
 /**
  * 全局实体详情弹窗容器 — 监听 4 类 detail 事件,在 AppShell 顶层渲染对应弹窗。
  *
@@ -72,9 +71,13 @@ export function GlobalEntityDialogs() {
   const [categoryOffset, setCategoryOffset] = useState(0)
   const [categoryLoading, setCategoryLoading] = useState(false)
   // Stats 批量数据 — 跟 categoryScope 联动:current 限当前账本,all 跨账本。
-  const [categoryStatsTxs, setCategoryStatsTxs] = useState<WorkspaceTransaction[]>([])
   const [categoryStatsLoading, setCategoryStatsLoading] = useState(false)
-  const [categoryStatsTruncated, setCategoryStatsTruncated] = useState(false)
+  const [categoryContext, setCategoryContext] = useState<StatisticsContext | undefined>()
+  const [categoryServerStats, setCategoryServerStats] = useState<CategoryStatistics | null>(null)
+  const [categoryError, setCategoryError] = useState(false)
+  const categoryRequest = useRef(0)
+  const closeCategory = useCallback(() => { categoryRequest.current++; setCategory(null) }, [])
+  useEffect(() => { closeCategory() }, [activeLedgerId, closeCategory])
 
   const [tag, setTag] = useState<WorkspaceTag | null>(null)
   const [tagScope, setTagScope] = useState<DetailScope>('current')
@@ -151,63 +154,66 @@ export function GlobalEntityDialogs() {
   )
 
   const loadCategoryTxs = useCallback(
-    async (categorySyncId: string, scope: DetailScope, offset: number) => {
+    async (categorySyncId: string, scope: DetailScope, offset: number, context?: StatisticsContext) => {
+      const request = categoryRequest.current
       setCategoryLoading(true)
       try {
         const page = await fetchWorkspaceTransactions(token, {
-          categorySyncId,
-          ledgerId: scope === 'current' ? activeLedgerId || undefined : undefined,
+          categorySyncId: context ? undefined : categorySyncId,
+          ...(context ? statisticsQuery(context) : {}),
+          ledgerId: context?.ledgerId ?? (scope === 'current' ? activeLedgerId || undefined : undefined),
           limit: DETAIL_PAGE_SIZE,
           offset,
         })
+        if (request !== categoryRequest.current) return
         setCategoryTxs((prev) => (offset === 0 ? page.items : [...prev, ...page.items]))
         setCategoryTotal(page.total)
         setCategoryOffset(offset + page.items.length)
       } catch {
-        // ignore
+        if (request === categoryRequest.current) setCategoryError(true)
       } finally {
-        setCategoryLoading(false)
+        if (request === categoryRequest.current) setCategoryLoading(false)
       }
     },
     [token, activeLedgerId],
   )
 
-  /** 拉一次大批量用于客户端聚合 KPI / 趋势 / Top。scope=current 限定当前账本,
-   *  scope=all 跨账本。cap=1000 — 超过显示截断提示,KPI 仍可用但精度下降。 */
+  /** 完整聚合由后端计算，不以分页或前1000笔作为统计样本。 */
   const loadCategoryStats = useCallback(
-    async (categorySyncId: string, scope: DetailScope) => {
+    async (categorySyncId: string, scope: DetailScope, context?: StatisticsContext) => {
+      const request = categoryRequest.current
       setCategoryStatsLoading(true)
-      setCategoryStatsTruncated(false)
+      setCategoryServerStats(null)
       try {
-        const page = await fetchWorkspaceTransactions(token, {
-          categorySyncId,
+        const stats = await fetchCategoryStatistics(token, {
+          categorySyncId: context ? undefined : categorySyncId,
           ledgerId: scope === 'current' ? activeLedgerId || undefined : undefined,
-          limit: CATEGORY_STATS_LIMIT,
-          offset: 0,
+          ...(context ? statisticsQuery(context) : {}),
+          tzOffsetMinutes: context?.tzOffsetMinutes ?? -new Date().getTimezoneOffset(),
+          naturalMonth: context?.naturalMonth,
         })
-        setCategoryStatsTxs(page.items)
-        setCategoryStatsTruncated(page.total > page.items.length)
+        if (request === categoryRequest.current) setCategoryServerStats(stats)
       } catch {
-        setCategoryStatsTxs([])
+        if (request === categoryRequest.current) setCategoryError(true)
       } finally {
-        setCategoryStatsLoading(false)
+        if (request === categoryRequest.current) setCategoryStatsLoading(false)
       }
-    },
-    [token, activeLedgerId],
+    }, [token, activeLedgerId],
   )
 
   // 监听 category detail
   useEffect(() => {
-    return onOpenDetailCategory((cat, defaultScope) => {
+    return onOpenDetailCategory((cat, defaultScope, context) => {
+      categoryRequest.current++
+      setCategoryContext(context)
+      setCategoryError(false)
       setCategory(cat)
       setCategoryScope(defaultScope)
       setCategoryTxs([])
       setCategoryTotal(0)
       setCategoryOffset(0)
-      setCategoryStatsTxs([])
-      setCategoryStatsTruncated(false)
-      void loadCategoryTxs(cat.id, defaultScope, 0)
-      void loadCategoryStats(cat.id, defaultScope)
+      void loadCategoryTxs(cat.id, defaultScope, 0, context)
+      void loadCategoryStats(cat.id, defaultScope, context)
       if (tagsDict.length === 0) {
         void fetchWorkspaceTags(token, { limit: 500 }).then(setTagsDict).catch(() => undefined)
       }
@@ -216,18 +222,26 @@ export function GlobalEntityDialogs() {
 
   const handleCategoryScopeChange = useCallback(
     (next: DetailScope) => {
-      if (!category || next === categoryScope) return
+      if (!category || categoryContext || next === categoryScope) return
+      categoryRequest.current++
+      setCategoryError(false)
       setCategoryScope(next)
       setCategoryTxs([])
       setCategoryTotal(0)
       setCategoryOffset(0)
-      setCategoryStatsTxs([])
-      setCategoryStatsTruncated(false)
       void loadCategoryTxs(category.id, next, 0)
       void loadCategoryStats(category.id, next)
     },
-    [category, categoryScope, loadCategoryTxs, loadCategoryStats],
+    [category, categoryScope, categoryContext, loadCategoryTxs, loadCategoryStats],
   )
+
+  useSyncRefresh(() => {
+    if (!category) return
+    categoryRequest.current++
+    setCategoryError(false)
+    void loadCategoryTxs(category.id, categoryScope, 0, categoryContext)
+    void loadCategoryStats(category.id, categoryScope, categoryContext)
+  })
 
   const loadTagTxs = useCallback(
     async (tagSyncId: string, scope: DetailScope, offset: number) => {
@@ -299,6 +313,11 @@ export function GlobalEntityDialogs() {
 
   const handleJumpToTransactions = useCallback(
     (cat: WorkspaceCategory) => {
+      if (categoryContext) {
+        closeCategory()
+        navigate(statisticsLink(categoryContext))
+        return
+      }
       const scopeAtJump = categoryScope
       setCategory(null)
       // 跳过去的 TransactionsPage ledger filter 跟当前 scope 对齐:current
@@ -311,7 +330,7 @@ export function GlobalEntityDialogs() {
       }
       navigate(`/app/transactions?${params.toString()}`)
     },
-    [navigate, activeLedgerId, categoryScope],
+    [navigate, activeLedgerId, categoryScope, categoryContext, closeCategory],
   )
 
   return (
@@ -341,19 +360,31 @@ export function GlobalEntityDialogs() {
         category={category}
         scope={categoryScope}
         onScopeChange={handleCategoryScopeChange}
-        currency={activeCurrency}
-        statsTransactions={categoryStatsTxs}
+        currency={categoryContext?.currency ?? activeCurrency}
+        statsTransactions={[]}
+        serverStats={categoryServerStats}
+        statisticsContext={categoryContext}
+        statsError={categoryError}
+        onRetry={() => {
+          if (!category) return
+          categoryRequest.current++
+          setCategoryError(false)
+          void loadCategoryTxs(category.id, categoryScope, 0, categoryContext)
+          void loadCategoryStats(category.id, categoryScope, categoryContext)
+        }}
+        trendBuckets={categoryContext ? statisticsMonths(categoryContext) : undefined}
         statsLoading={categoryStatsLoading}
-        statsTruncated={categoryStatsTruncated}
+        statsTruncated={false}
         transactions={categoryTxs}
         total={categoryTotal}
         offset={categoryOffset}
         loading={categoryLoading}
         tags={tagsDict}
         iconPreviewUrlByFileId={iconPreviewByFileId}
-        ledgerMonthStartDay={currentLedger?.month_start_day ?? 1}
-        onClose={() => setCategory(null)}
-        onLoadMore={(syncId, off) => void loadCategoryTxs(syncId, categoryScope, off)}
+        ledgerMonthStartDay={categoryContext?.naturalMonth ? 1 : currentLedger?.month_start_day ?? 1}
+        onClose={closeCategory}
+        onLoadMore={(syncId, off) => void loadCategoryTxs(syncId, categoryScope, off, categoryContext)}
+        canManage={!categoryContext}
         onEdit={handleEditCategory}
         onJumpToTransactions={handleJumpToTransactions}
       />

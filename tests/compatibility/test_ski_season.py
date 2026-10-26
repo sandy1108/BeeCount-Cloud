@@ -21,7 +21,7 @@ def test_season_range_and_calendar_buckets():
     start, end, label = _analytics_range(
         scope="ski_season", period="2025", tz_offset_minutes=480, month_start_day=20
     )
-    assert start == datetime(2025, 9, 30, 16, tzinfo=timezone.utc)
+    assert start == datetime(2025, 4, 30, 16, tzinfo=timezone.utc)
     assert end == datetime(2026, 4, 30, 16, tzinfo=timezone.utc)
     assert label == "2025"
     assert (
@@ -53,8 +53,8 @@ def test_mode_and_season_statistics_are_isolated(client):
     assert next(r for r in rows if r["ledger_id"] == ledger)["statistics_mode"] == "ski_season"
     assert next(r for r in rows if r["ledger_id"] == ordinary)["statistics_mode"] == "standard"
     for time, amount in [
-        ("2025-09-30T15:59:59Z", 1),
-        ("2025-09-30T16:00:00Z", 10),
+        ("2025-04-30T15:59:59Z", 1),
+        ("2025-04-30T16:00:00Z", 10),
         ("2026-01-01T00:00:00Z", 20),
         ("2026-04-30T15:59:59Z", 30),
         ("2026-04-30T16:00:00Z", 100),
@@ -90,7 +90,7 @@ def test_mode_and_season_statistics_are_isolated(client):
     assert body["summary"]["expense_total"] == 60
     assert body["summary"]["income_total"] == 80
     assert body["summary"]["transaction_count"] == 4
-    assert [s["bucket"] for s in body["series"]] == ["2025-10", "2026-01", "2026-02", "2026-04"]
+    assert [s["bucket"] for s in body["series"]] == ["2025-05", "2026-01", "2026-02", "2026-04"]
     assert sum(r["total"] for r in body["category_ranks"]) == 60
     for target in [None, ordinary]:
         bad = dict(params)
@@ -138,8 +138,8 @@ def test_legacy_sync_missing_mode_does_not_reset_it(client):
     "date,year",
     [
         ("2026-01-01", "2025"),
-        ("2026-05-01", "2025"),
-        ("2026-09-30", "2025"),
+        ("2026-05-01", "2026"),
+        ("2026-09-30", "2026"),
         ("2026-10-01", "2026"),
     ],
 )

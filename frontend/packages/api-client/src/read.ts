@@ -133,6 +133,8 @@ export async function fetchWorkspaceTransactions(
     accountName?: string
     txSyncId?: string
     tagSyncId?: string
+    categoryGroup?: string
+    statisticsOnly?: boolean
     categorySyncId?: string
     accountSyncId?: string
     /** 金额下限(含),按 abs 比较 */
@@ -155,6 +157,8 @@ export async function fetchWorkspaceTransactions(
   if (options?.accountName) query.set('account_name', options.accountName)
   if (options?.txSyncId) query.set('tx_sync_id', options.txSyncId)
   if (options?.tagSyncId) query.set('tag_sync_id', options.tagSyncId)
+  if (options?.categoryGroup !== undefined) query.set('category_group', options.categoryGroup)
+  if (options?.statisticsOnly) query.set('statistics_only', 'true')
   if (options?.categorySyncId) query.set('category_sync_id', options.categorySyncId)
   if (options?.accountSyncId) query.set('account_sync_id', options.accountSyncId)
   if (typeof options?.amountMin === 'number') query.set('amount_min', `${options.amountMin}`)
@@ -321,6 +325,8 @@ export type DownloadCsvOptions = {
   accountName?: string
   accountSyncId?: string
   categorySyncId?: string
+  categoryGroup?: string
+  statisticsOnly?: boolean
   tagSyncId?: string
   amountMin?: number
   amountMax?: number
@@ -363,6 +369,8 @@ export async function downloadWorkspaceTransactionsCsv(
     if (options.q) query.set('q', options.q)
     if (options.accountName) query.set('account_name', options.accountName)
     if (options.accountSyncId) query.set('account_sync_id', options.accountSyncId)
+    if (options.categoryGroup !== undefined) query.set('category_group', options.categoryGroup)
+    if (options.statisticsOnly) query.set('statistics_only', 'true')
     if (options.categorySyncId) query.set('category_sync_id', options.categorySyncId)
     if (options.tagSyncId) query.set('tag_sync_id', options.tagSyncId)
     if (typeof options.amountMin === 'number')
@@ -421,4 +429,27 @@ function parseFilenameFromDisposition(value: string): string | null {
   }
   const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(value)
   return plain ? plain[1].trim() : null
+}
+
+/** 完整后端聚合；明细分页不会改变KPI。 */
+export type CategoryStatistics = {
+  count: number; total: number; avg: number
+  max: { amount: number; tx: WorkspaceTransaction | null }
+  monthly: { bucket: string; amount: number; count: number }[]
+  topAccounts: { name: string; amount: number; count: number }[]
+  topTags: { name: string; color: string | null; amount: number; count: number }[]
+  peak: { bucket: string; amount: number } | null
+}
+export async function fetchCategoryStatistics(token: string, options: {
+  ledgerId?: string; categorySyncId?: string; categoryGroup?: string; txType?: string
+  statisticsOnly?: boolean; dateFrom?: string; dateTo?: string
+  tzOffsetMinutes?: number; naturalMonth?: boolean
+}): Promise<CategoryStatistics> {
+  const query = new URLSearchParams()
+  for (const [key, value] of Object.entries(options)) {
+    if (value === undefined) continue
+    const snake = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`)
+    query.set(snake, String(value))
+  }
+  return authedGet<CategoryStatistics>(`/read/workspace/category-statistics?${query}`, token)
 }

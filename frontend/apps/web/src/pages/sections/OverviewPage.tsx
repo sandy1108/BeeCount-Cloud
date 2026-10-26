@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useT } from '@beecount/ui'
 
 import {
@@ -17,7 +17,8 @@ import {
 } from '@beecount/api-client'
 import { fetchBudgetsWithUsage, periodLabel, type BudgetUsage } from '@beecount/web-features'
 
-import { currentSkiSeason, fillSeasonSeries, type DashboardScope } from '../../lib/skiSeason'
+import { currentSkiSeason, fillSeasonSeries, seasonLabel, type DashboardScope } from '../../lib/skiSeason'
+import { statisticsRangeLabel, type StatisticsContext } from '../../lib/statisticsContext'
 import { OverviewSection } from '../../components/sections/OverviewSection'
 import { useAuth } from '../../context/AuthContext'
 import { useLedgers } from '../../context/LedgersContext'
@@ -40,13 +41,21 @@ export function OverviewPage() {
 
 function OverviewLedgerPage() {
   const { currentLedger } = useLedgers()
-  const [scope, setScope] = useState<DashboardScope>('month')
-  const [seasonYear, setSeasonYear] = useState(currentSkiSeason)
+  const [params, setParams] = useSearchParams()
+  const scopeParam = params.get('scope')
+  const scope: DashboardScope = scopeParam === 'year' || scopeParam === 'all' ? scopeParam : 'month'
+  const yearParam = params.get('season') || ''
+  const seasonYear = /^[0-9]{4}$/.test(yearParam) && Number(yearParam) >= 1 && Number(yearParam) <= 9998 ? Number(yearParam) : currentSkiSeason()
   const skiMode = currentLedger?.statistics_mode === 'ski_season'
+  const select = (nextScope: DashboardScope, year = seasonYear) => {
+    const next = new URLSearchParams(params)
+    next.set('scope', nextScope); next.set('season', String(year))
+    setParams(next, { replace: true })
+  }
   return <OverviewContent key={skiMode ? `${scope}:${seasonYear}` : 'standard'}
     scope={scope} seasonYear={seasonYear}
-    onScopeChange={(value) => { if (value === 'year') setSeasonYear(currentSkiSeason()); setScope(value) }}
-    onSeasonYearChange={(year) => { setSeasonYear(year); setScope('year') }} />
+    onScopeChange={value => select(value, value === 'year' ? currentSkiSeason() : seasonYear)}
+    onSeasonYearChange={year => select('year', year)} />
 }
 
 function OverviewContent({ scope, seasonYear, onScopeChange, onSeasonYearChange }: {
@@ -55,6 +64,7 @@ function OverviewContent({ scope, seasonYear, onScopeChange, onSeasonYearChange 
 }) {
   const navigate = useNavigate()
   const t = useT()
+  const [monthRange, setMonthRange] = useState<WorkspaceAnalytics['range'] | null>(null)
   const [analyticsStatus, setAnalyticsStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const { token } = useAuth()
   const { activeLedgerId, currentLedger } = useLedgers()
@@ -234,6 +244,7 @@ function OverviewContent({ scope, seasonYear, onScopeChange, onSeasonYearChange 
       setAnalyticsIncomeRanks(rYearIncome.value.category_ranks || [])
     }
     if (rMonthly.status === 'fulfilled') {
+      setMonthRange(rMonthly.value.range)
       setCurrentMonthSummary(rMonthly.value.summary)
       setCurrentMonthSeries(rMonthly.value.series || [])
       setCurrentMonthCategoryRanks(rMonthly.value.category_ranks || [])
@@ -281,31 +292,35 @@ function OverviewContent({ scope, seasonYear, onScopeChange, onSeasonYearChange 
     void loadCategories()
   })
 
-  // 把 Top 卡片里只有 name 的点击事件反查成 WorkspaceCategory 后弹详情;
-  // 反查不到(分类被删 / name 是 "Uncategorized" / 异步 race)兜底跳交易页。
+  // 首页展示的是名称聚合组，可能含多个ID或无分类；详情按同一组读取，不能挑第一个ID。
+  const homeContext = useCallback((name: string, kind: 'expense' | 'income', source: 'main' | 'month' = 'main'): StatisticsContext | undefined => {
+    if (!activeLedgerId || !currentLedger) return undefined
+    const range = source === 'month' && !skiMode ? monthRange : analyticsData?.range
+    if (!range || (range.end_at && !range.end_at_exclusive)) return undefined
+    return {
+      ledgerId: activeLedgerId, ledgerName: currentLedger.ledger_name,
+      currency: currentLedger.currency || 'CNY', categoryGroup: name, txType: kind,
+      dateFrom: range.start_at || undefined, dateTo: range.end_at_exclusive || undefined,
+      periodLabel: range.scope === 'ski_season' ? seasonLabel(Number(range.period), t('ski.suffix')) :
+        range.scope === 'all' ? t('home.scope.all') : range.period || '',
+      naturalMonth: range.scope === 'ski_season' || range.scope === 'all',
+      tzOffsetMinutes: -new Date().getTimezoneOffset(),
+    }
+  }, [activeLedgerId, currentLedger, monthRange, analyticsData, skiMode, t])
   const onCategoryClickFromHome = useCallback(
-    (name: string, kind: 'expense' | 'income') => {
-      const trimmed = (name || '').trim()
-      if (!trimmed) {
-        navigate(`/app/transactions`)
-        return
+    (name: string, kind: 'expense' | 'income', source: 'main' | 'month' = 'main') => {
+      const context = homeContext(name, kind, source)
+      if (!context) return
+      const existing = categories.find(c => c.name.trim() === name && c.kind === kind)
+      const cat: WorkspaceCategory = existing ?? {
+        id: '__statistics_group__', name, kind, level: 1, sort_order: null, icon: null,
+        icon_type: null, parent_name: null, last_change_id: 0, ledger_id: activeLedgerId,
+        ledger_name: currentLedger?.ledger_name ?? null, created_by_user_id: null, created_by_email: null,
       }
-      const cat = categories.find(
-        (c) =>
-          (c.name || '').trim().toLowerCase() === trimmed.toLowerCase() &&
-          (c.kind || '').toLowerCase() === kind,
-      )
-      if (cat) {
-        // 首页 Top 分类卡片 → 默认当前账本,跟 OverviewPage 其它图表口径一致。
-        dispatchOpenDetailCategory(cat, { defaultScope: 'current' })
-        return
-      }
-      const params = new URLSearchParams({ q: trimmed })
-      if (activeLedgerId) params.set('ledger', activeLedgerId)
-      navigate(`/app/transactions?${params.toString()}`)
-    },
-    [categories, navigate, activeLedgerId],
+      dispatchOpenDetailCategory(cat, { defaultScope: 'current', statisticsContext: context })
+    }, [categories, homeContext, activeLedgerId, currentLedger],
   )
+  const scopeContext = homeContext('', 'expense')
 
   // PWA dock badge:统计本月超支预算条数,写到 navigator.setAppBadge。
   // 用户安装 PWA 后,即使应用没在前台,dock 图标也会显示一个小红点(数字),
@@ -360,6 +375,7 @@ function OverviewContent({ scope, seasonYear, onScopeChange, onSeasonYearChange 
         navigate(`/app/transactions${suffix}`)
       }}
       onCategoryClickFromTop={onCategoryClickFromHome}
+      statisticsScopeLabel={scopeContext ? statisticsRangeLabel(scopeContext) : undefined}
     />
   )
 }

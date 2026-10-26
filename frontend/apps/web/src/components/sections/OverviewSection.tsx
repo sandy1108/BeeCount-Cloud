@@ -50,7 +50,8 @@ interface Props {
   onJumpToTransactionsWithQuery: (query: string) => void
   /** Top 卡片点击分类名时的钩子 — page 端反查 WorkspaceCategory 后派发详情。
    *  没传则 Top 卡片回退到 onJumpToTransactionsWithQuery。 */
-  onCategoryClickFromTop?: (name: string, kind: 'expense' | 'income') => void
+  statisticsScopeLabel?: string
+  onCategoryClickFromTop?: (name: string, kind: 'expense' | 'income', source?: 'main' | 'month') => void
 }
 
 /**
@@ -82,7 +83,7 @@ export function OverviewSection({
   budgets,
   budgetUsageById,
   onJumpToTransactionsWithQuery,
-  onCategoryClickFromTop,
+  onCategoryClickFromTop, statisticsScopeLabel,
 }: Props) {
   const t = useT()
   const { profileMe } = useAuth()
@@ -121,6 +122,7 @@ export function OverviewSection({
         hasEnoughMonthsForAnomaly={!skiMode && yearOccurredMonths >= 3}
       />
 
+      {statisticsScopeLabel && <p className="text-xs text-muted-foreground">{statisticsScopeLabel} · {t('statistics.basis')}</p>}
       {skiMode && <p className="text-xs text-muted-foreground">{t('ski.scopeHint')}</p>}
       <HomeHabitStats
         statisticsFocus={statisticsFocus}
@@ -139,7 +141,7 @@ export function OverviewSection({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <HomeMonthCategoryDonut ranks={skiMode ? analyticsData?.category_ranks || [] : currentMonthCategoryRanks} currency={currency} title={periodTitle ? `${periodTitle} · ${t('ski.categories')}` : undefined} />
+        <HomeMonthCategoryDonut onSelectCategory={onCategoryClickFromTop ? name => onCategoryClickFromTop(name, 'expense', 'month') : undefined} ranks={skiMode ? analyticsData?.category_ranks || [] : currentMonthCategoryRanks} currency={currency} title={periodTitle ? `${periodTitle} · ${t('ski.categories')}` : undefined} />
         <HomeYearHeatmap yearSeries={currentYearSeries} currency={currency} buckets={buckets} title={periodTitle ? `${periodTitle} · ${t('ski.distribution')}` : undefined} />
       </div>
 

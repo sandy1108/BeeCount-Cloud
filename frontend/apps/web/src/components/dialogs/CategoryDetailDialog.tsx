@@ -1,6 +1,8 @@
+import { isFutureBucket } from '../../lib/skiSeason'
 import { useMemo } from 'react'
 import type {
   AttachmentRef,
+  CategoryStatistics,
   WorkspaceCategory,
   WorkspaceTag,
   WorkspaceTransaction,
@@ -20,6 +22,7 @@ import { ArrowRight, Edit3, TrendingDown, TrendingUp } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { formatCompactTick } from '../../i18n/format'
 import type { DetailScope } from '../../lib/txDialogEvents'
+import { statisticsRangeLabel, type StatisticsContext } from '../../lib/statisticsContext'
 import { DetailScopeToggle } from './DetailScopeToggle'
 import {
   Bar,
@@ -33,6 +36,11 @@ import {
 } from 'recharts'
 
 interface Props {
+  serverStats?: CategoryStatistics | null
+  statisticsContext?: StatisticsContext
+  trendBuckets?: string[]
+  statsError?: boolean
+  onRetry?: () => void
   category: WorkspaceCategory | null
   /** 账本作用域:'all' 跨账本聚合,'current' 仅当前账本。控制交易列表 +
    *  统计的 ledger filter,顶部 toggle 可切换。 */
@@ -85,17 +93,11 @@ interface StatsAgg {
  *  4. Top 账户(出现频次 + 累计金额) + Top 标签(co-occurrence)并排
  *  5. 该分类下的交易列表(分页/无限滚动)
  *
- * 数据约定:
- *  - 由 GlobalEntityDialogs 调用 fetchWorkspaceTransactions({ categorySyncId,
- *    ledgerId }) 拉到 statsTransactions(限定当前账本),所有 KPI / 趋势 /
- *    Top 都在客户端聚合。Trade-off:简单实现 vs 完整精度 — server 没有
- *    "单分类完整聚合" endpoint,但每个分类的 tx 量在单账本下通常不大,
- *    拉 limit=1000 已经能覆盖 95%+ 场景。超出时显示截断提示。
- *  - transactions 是给 TransactionList 用的分页流,可以跟 statsTransactions
- *    重叠,但 stats 不依赖它(避免分页过程中 KPI 抖动)。
+ * 数据约定：后端完整聚合提供KPI，交易列表独立分页；首页入口携带不可变统计范围。
  */
 export function CategoryDetailDialog({
   category,
+  serverStats, statisticsContext, trendBuckets, statsError, onRetry,
   scope,
   onScopeChange,
   currency,
@@ -132,14 +134,14 @@ export function CategoryDetailDialog({
 
   const stats = useMemo<StatsAgg | null>(() => {
     if (!category) return null
-    const agg = aggregate(statsTransactions, ledgerMonthStartDay)
+    const agg = serverStats ? { ...serverStats } : aggregate(statsTransactions, ledgerMonthStartDay)
     // 把 tag 颜色用 tags 字典回填,aggregate() 自身不依赖外部数据。
     agg.topTags = agg.topTags.map((tg) => ({
       ...tg,
       color: tagColorByName.get(tg.name) ?? null,
     }))
     return agg
-  }, [category, statsTransactions, tagColorByName, ledgerMonthStartDay])
+  }, [category, serverStats, statsTransactions, tagColorByName, ledgerMonthStartDay])
 
   const kindLabel = category
     ? category.kind === 'expense'
@@ -207,14 +209,19 @@ export function CategoryDetailDialog({
               </span>
             </div>
           </DialogTitle>
-          <DetailScopeToggle value={scope} onChange={onScopeChange} className="mt-1 shrink-0" />
+          {!statisticsContext && <DetailScopeToggle value={scope} onChange={onScopeChange} className="mt-1 shrink-0" />}
         </DialogHeader>
 
         {category ? (
           <div className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 overflow-y-auto">
+              {statisticsContext && <div className="border-b border-border/60 bg-muted/20 px-6 py-3 text-xs text-muted-foreground">{statisticsRangeLabel(statisticsContext)} · {t(`enum.txType.${statisticsContext.txType}`)} · {t('statistics.basis')}</div>}
+              {statsError && <div role="alert" className="flex items-center justify-between gap-3 px-6 py-3 text-sm text-destructive">
+                <p>{t('statistics.failed')}</p>
+                {onRetry && <Button size="sm" variant="outline" onClick={onRetry}>{t('statistics.retry')}</Button>}
+              </div>}
               <KpiRow
-                stats={stats}
+                stats={statsError ? null : stats}
                 statsLoading={statsLoading}
                 currency={currency}
                 amountTone={kindAmountTone}
@@ -237,6 +244,8 @@ export function CategoryDetailDialog({
                 t={t}
                 chinese={chinese}
                 startDay={ledgerMonthStartDay}
+                buckets={trendBuckets}
+                exactRange={Boolean(statisticsContext)}
               />
 
               <div className="grid gap-4 border-b border-border/60 px-6 py-4 sm:grid-cols-2">
@@ -302,10 +311,10 @@ export function CategoryDetailDialog({
               <Button variant="outline" size="sm" onClick={onClose}>
                 {t('dialog.cancel')}
               </Button>
-              <Button size="sm" disabled={!canManage} onClick={() => onEdit(category)}>
+              {canManage && <Button size="sm" onClick={() => onEdit(category)}>
                 <Edit3 className="mr-1 h-3.5 w-3.5" />
                 {t('common.edit')}
-              </Button>
+              </Button>}
             </div>
           </div>
         ) : null}
@@ -397,7 +406,7 @@ function TrendBars({
   currency,
   t,
   chinese,
-  startDay = 1,
+  startDay = 1, buckets, exactRange,
 }: {
   monthly: { bucket: string; amount: number; count: number }[]
   kind: WorkspaceCategory['kind']
@@ -405,9 +414,17 @@ function TrendBars({
   t: (k: string) => string
   chinese: boolean
   startDay?: number
+  buckets?: string[]
+  exactRange?: boolean
 }) {
   // 取最近 12 个月。如果不足 12 期,补空格保证轴长度一致,视觉上能看出"才记账几个月"。
-  const slice = useMemo(() => fillTrailingMonths(monthly, 12, startDay), [monthly, startDay])
+  const slice = useMemo(() => {
+    if (buckets) {
+      const map = new Map(monthly.map(item => [item.bucket, item]))
+      return buckets.map(bucket => map.get(bucket) ?? { bucket, amount: 0, count: 0 })
+    }
+    return exactRange ? monthly : fillTrailingMonths(monthly, 12, startDay)
+  }, [monthly, startDay, buckets, exactRange])
   const hasData = slice.some((s) => s.amount > 0)
   const barFill =
     kind === 'expense'
@@ -424,7 +441,7 @@ function TrendBars({
     <div className="border-b border-border/60 px-6 py-4">
       <div className="flex items-center justify-between">
         <div className="text-[11px] uppercase tracking-widest text-muted-foreground">
-          {t('detail.category.trend.title')}
+          {t(exactRange ? 'statistics.trend' : 'detail.category.trend.title')}
         </div>
         {peak.amount > 0 ? (
           <div className="flex items-center gap-1.5 text-[11px]">
@@ -442,6 +459,7 @@ function TrendBars({
           </div>
         ) : null}
       </div>
+      {exactRange && slice.some(row => isFutureBucket(row.bucket)) && <p className="mt-1 text-[11px] text-muted-foreground">* {t('statistics.futureHint')}</p>}
       <div className="mt-2 h-32">
         {!hasData ? (
           <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
@@ -461,7 +479,8 @@ function TrendBars({
                 stroke="hsl(var(--border))"
                 tickFormatter={(b: string) => {
                   const parts = b.split('-')
-                  return parts.length >= 2 ? parts.slice(1).join('-') : b
+                  const label = parts.length >= 2 ? parts.slice(1).join('-') : b
+                  return exactRange && isFutureBucket(b) ? `${label}*` : label
                 }}
                 interval={0}
               />
@@ -474,6 +493,7 @@ function TrendBars({
                 width={40}
               />
               <Tooltip
+                labelFormatter={value => `${value}${exactRange && isFutureBucket(String(value)) ? ` · ${t('statistics.futureRecorded')}` : ''}`}
                 contentStyle={{
                   background: 'hsl(var(--popover))',
                   border: '1px solid hsl(var(--border))',
@@ -488,7 +508,6 @@ function TrendBars({
                   }),
                   t('detail.category.trend.amount'),
                 ]) as unknown as never}
-                labelFormatter={((b: string) => b) as unknown as never}
               />
               <Bar dataKey="amount" radius={[3, 3, 0, 0]}>
                 {slice.map((s) => (
@@ -504,7 +523,7 @@ function TrendBars({
         )}
       </div>
       <p className="mt-1 text-[10px] text-muted-foreground">
-        {t('detail.category.trend.hint')}
+        {t(exactRange ? 'statistics.trendHint' : 'detail.category.trend.hint')}
       </p>
     </div>
   )

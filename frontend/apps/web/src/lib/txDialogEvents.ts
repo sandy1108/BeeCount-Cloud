@@ -1,3 +1,4 @@
+import type { StatisticsContext } from './statisticsContext'
 import type {
   WorkspaceAccount,
   WorkspaceCategory,
@@ -171,15 +172,17 @@ const EDIT_CATEGORY_EVENT = 'bee:open-edit-category'
 type CategoryDetailPayload = {
   category: WorkspaceCategory
   defaultScope: DetailScope
+  statisticsContext?: StatisticsContext
 }
 
 export function dispatchOpenDetailCategory(
   category: WorkspaceCategory,
-  options?: DetailOpenOptions,
+  options?: DetailOpenOptions & { statisticsContext?: StatisticsContext },
 ) {
   const payload: CategoryDetailPayload = {
     category,
     defaultScope: options?.defaultScope ?? 'current',
+    statisticsContext: options?.statisticsContext,
   }
   window.dispatchEvent(
     new CustomEvent(DETAIL_CATEGORY_EVENT, { detail: payload }),
@@ -193,11 +196,11 @@ export function dispatchOpenEditCategory(category: WorkspaceCategory) {
 }
 
 export function onOpenDetailCategory(
-  handler: (category: WorkspaceCategory, defaultScope: DetailScope) => void,
+  handler: (category: WorkspaceCategory, defaultScope: DetailScope, statisticsContext?: StatisticsContext) => void,
 ): () => void {
   const wrapped = (e: Event) => {
     const detail = (e as CustomEvent<CategoryDetailPayload>).detail
-    if (detail?.category) handler(detail.category, detail.defaultScope)
+    if (detail?.category) handler(detail.category, detail.defaultScope, detail.statisticsContext)
   }
   window.addEventListener(DETAIL_CATEGORY_EVENT, wrapped)
   return () => window.removeEventListener(DETAIL_CATEGORY_EVENT, wrapped)

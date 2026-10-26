@@ -34,6 +34,15 @@ describe('dashboard presentation', () => {
     expect(original).toContain('本月结余')
     expect(original).toContain('本月结余走势')
   })
+  it('shows the same May-to-April range in the hero as the actual seasonal query', () => {
+    const html = render(<HomeHero selectedScope="year" seasonYear={2026} currentLedgerId="ski"
+      ledgers={[{ ledger_id: 'ski', ledger_name: '合成', currency: 'CNY', statistics_mode: 'ski_season',
+        transaction_count: 0, income_total: 0, expense_total: 0, balance: 0,
+        exported_at: null, updated_at: '2026-01-01', role: 'owner' }]} />)
+    expect(html).toContain('2026-05-01')
+    expect(html).toContain('2027-04-30')
+    expect(html).not.toContain('2026-10-01')
+  })
   it('hides only saving rate in expense view and restores it in balance view', () => {
     const expense = render(<HomeHabitStats statisticsFocus="expense" />)
     expect(expense).not.toContain('储蓄率')

@@ -8,13 +8,13 @@ import { SkiSeasonControls } from './components/dashboard/SkiSeasonControls'
 describe('ski season', () => {
   beforeEach(() => vi.stubGlobal('window', { localStorage: { getItem: () => 'zh-CN' } }))
   afterEach(() => vi.unstubAllGlobals())
-  it('uses the previous starting year from January through September', () => {
-    for (const month of [0, 4, 8]) expect(currentSkiSeason(new Date(2026, month, 1))).toBe(2025)
-    expect(currentSkiSeason(new Date(2026, 9, 1))).toBe(2026)
+  it('uses the previous starting year from January through April', () => {
+    for (const month of [0, 1, 3]) expect(currentSkiSeason(new Date(2026, month, 1))).toBe(2025)
+    expect(currentSkiSeason(new Date(2026, 4, 1))).toBe(2026)
   })
-  it('keeps seven real cross-year months and the requested short label', () => {
+  it('keeps twelve real cross-year months and the requested short label', () => {
     expect(seasonLabel(2025)).toBe('25~26雪季')
-    expect(seasonMonths(2025)).toEqual(['2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04'])
+    expect(seasonMonths(2025)).toEqual(['2025-05', '2025-06', '2025-07', '2025-08', '2025-09', '2025-10', '2025-11', '2025-12', '2026-01', '2026-02', '2026-03', '2026-04'])
   })
   it('shows four flat common buttons and reserves history for older seasons', () => {
     const html = renderToStaticMarkup(<LocaleProvider dictionaries={dictionaries}>
@@ -51,7 +51,7 @@ it('renders the historical cross-year heatmap without silently substituting the 
     <HomeYearHeatmap buckets={seasonMonths(2023)} title="23~24雪季 · 支出分布"
       yearSeries={[{ bucket: '2024-01', expense: 100, income: 0, balance: -100 }]} />
   </LocaleProvider>)
-  expect(html).toContain('2023-10')
+  expect(html).toContain('2023-05')
   expect(html).toContain('2024-04')
   expect(html).toContain('2024-01')
   expect(html).not.toContain('2024-05')
@@ -61,9 +61,9 @@ it('renders the historical cross-year heatmap without silently substituting the 
 
 it('fills zero months in seasonal charts without changing recorded amounts', () => {
   const series = fillSeasonSeries(2025, [{ bucket: '2026-01', expense: 25, income: 5, balance: -20 }])
-  expect(series).toHaveLength(7)
-  expect(series[0]).toEqual({ bucket: '2025-10', income: 0, expense: 0, balance: 0 })
-  expect(series[3].expense).toBe(25)
+  expect(series).toHaveLength(12)
+  expect(series[0]).toEqual({ bucket: '2025-05', income: 0, expense: 0, balance: 0 })
+  expect(series[8].expense).toBe(25)
   expect(series.reduce((total, item) => total + item.expense, 0)).toBe(25)
 })
 

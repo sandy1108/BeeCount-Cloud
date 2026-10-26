@@ -1,3 +1,5 @@
+import { statisticsQuery, statisticsRangeLabel } from '../../lib/statisticsContext'
+import { useStatisticsContext } from '../../lib/useStatisticsContext'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { downloadAttachmentThumbnail, fetchGalleryAttachments, fetchWorkspaceCategories, type GalleryAttachment, type GalleryAttachmentPage, type WorkspaceCategory } from '@beecount/api-client'
 import { Button, Input, Pagination, useLocale, useT } from '@beecount/ui'
@@ -55,7 +57,8 @@ export function AttachmentsPage() {
   const [result, setResult] = useState<{ key: string; data: GalleryAttachmentPage } | null>(null)
   const [error, setError] = useState(false)
   const [revision, setRevision] = useState(0)
-  const queryKey = JSON.stringify([activeLedgerId, filters])
+  const { context: statisticsContext, clear: clearStatisticsContext } = useStatisticsContext()
+  const queryKey = JSON.stringify([activeLedgerId, filters, statisticsContext])
   const data = result?.key === queryKey ? result.data : null
   useSyncRefresh(() => setRevision(v => v + 1))
   useEffect(() => { const timer = setTimeout(() => setFilters(f => ({ ...f, q: search, page: 1 })), 250); return () => clearTimeout(timer) }, [search])
@@ -71,7 +74,7 @@ export function AttachmentsPage() {
     if (!activeLedgerId) return
     let alive = true
     setError(false)
-    void fetchGalleryAttachments(token, { ledgerId: activeLedgerId, q: filters.q, categorySyncId: filters.categoryId, ...attachmentDateRange(filters.year, filters.month), limit: filters.pageSize, offset: (filters.page - 1) * filters.pageSize }).then(page => {
+    void fetchGalleryAttachments(token, { ledgerId: activeLedgerId, q: filters.q, categorySyncId: filters.categoryId, ...attachmentDateRange(filters.year, filters.month), ...(statisticsContext ? statisticsQuery(statisticsContext) : {}), limit: filters.pageSize, offset: (filters.page - 1) * filters.pageSize }).then(page => {
       if (!alive) return
       if (filters.page > 1 && (filters.page - 1) * filters.pageSize >= page.total) { setFilters(f => ({ ...f, page: Math.max(1, Math.ceil(page.total / f.pageSize)) })); return }
       setResult({ key: queryKey, data: page })
@@ -90,7 +93,8 @@ export function AttachmentsPage() {
   const reset = () => { setSearch(''); setFilters(f => ({ ...f, q: '', categoryId: '', categoryName: '', year: null, month: null, page: 1 })) }
   return <section className="space-y-5" data-testid="attachments-page">
     <div className="flex flex-wrap items-start justify-between gap-3 pt-3"><div><h1 className="text-xl font-semibold">{t('attachments.title')}</h1><p className="mt-1 text-sm text-muted-foreground">{currentLedger?.ledger_name || t('attachments.subtitle')}</p></div></div>
-    <div className="flex flex-wrap gap-2"><label className="relative min-w-0 flex-[1_1_240px]"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input type="search" className="pl-9" aria-label={t('attachments.search')} placeholder={t('attachments.search')} value={search} onChange={e => setSearch(e.target.value)} /></label><YearMonthPicker year={filters.year} month={filters.month} onChange={(year, month) => setFilters(f => ({ ...f, year, month, page: 1 }))} /><Button variant="outline" onClick={() => setCategoryOpen(true)}><SlidersHorizontal className="mr-2 h-4 w-4" />{filters.categoryName || t('attachments.allCategories')}</Button>{filters.q || filters.categoryId || filters.year !== null ? <Button variant="ghost" onClick={reset}>{t('attachments.clear')}</Button> : null}</div>
+    {statisticsContext && <div className="flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs"><p className="flex-1 text-muted-foreground">{statisticsRangeLabel(statisticsContext)} · {statisticsContext.categoryGroup} · {t(`enum.txType.${statisticsContext.txType}`)} · {t('statistics.basis')}</p><Button size="sm" variant="ghost" onClick={clearStatisticsContext}>{t('statistics.clear')}</Button></div>}
+    <div className="flex flex-wrap gap-2"><label className="relative min-w-0 flex-[1_1_240px]"><Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" /><Input type="search" className="pl-9" aria-label={t('attachments.search')} placeholder={t('attachments.search')} value={search} onChange={e => setSearch(e.target.value)} /></label>{!statisticsContext && <><YearMonthPicker year={filters.year} month={filters.month} onChange={(year, month) => setFilters(f => ({ ...f, year, month, page: 1 }))} /><Button variant="outline" onClick={() => setCategoryOpen(true)}><SlidersHorizontal className="mr-2 h-4 w-4" />{filters.categoryName || t('attachments.allCategories')}</Button></>}{filters.q || filters.categoryId || filters.year !== null ? <Button variant="ghost" onClick={reset}>{t('attachments.clear')}</Button> : null}</div>
     {!activeLedgerId ? <p className="py-16 text-center text-sm text-muted-foreground">{t('attachments.noLedger')}</p> : error ? <div role="alert" className="py-16 text-center"><p className="text-sm text-destructive">{t('attachments.failed')}</p><Button variant="outline" className="mt-3" onClick={() => setRevision(v => v + 1)}>{t('attachments.retry')}</Button></div> : !data ? <p role="status" className="py-16 text-center text-sm text-muted-foreground">{t('attachments.loading')}</p> : <>
       <p className="text-xs text-muted-foreground" aria-live="polite">{t('attachments.count', { count: data.total, transactions: data.transaction_total })}</p>
       {data.items.length === 0 ? <div className="rounded-xl border border-dashed border-border py-20 text-center"><FileImage className="mx-auto mb-3 h-8 w-8 text-muted-foreground" /><p className="text-sm text-muted-foreground">{t(filters.q || filters.categoryId || filters.year !== null ? 'attachments.noMatches' : 'attachments.empty')}</p></div> : groups.map(([month, items]) => <section key={month} className="space-y-3"><h2 className="text-sm font-medium">{new Intl.DateTimeFormat(locale, { year: 'numeric', month: 'long' }).format(new Date(`${month}-01T12:00:00`))}</h2><div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5">{items.map(item => {

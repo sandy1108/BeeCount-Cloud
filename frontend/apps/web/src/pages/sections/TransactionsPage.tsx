@@ -1,3 +1,5 @@
+import { statisticsLink, statisticsQuery, statisticsRangeLabel } from '../../lib/statisticsContext'
+import { useStatisticsContext } from '../../lib/useStatisticsContext'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate as useNavigateRR, useSearchParams } from 'react-router-dom'
 
@@ -295,7 +297,9 @@ export function TransactionsPage() {
   // 列表数据走 PageDataCache(按账本分桶),切走再切回不闪烁。
   // 分页 / filter state 不进 cache —— 它们跟当前页面会话强相关,stale
   // 没有意义(用户期望 re-enter 时回到 page 1 看最新)。
-  const txBucket = activeLedgerId || '__none__'
+  const { context: statisticsContext, clear: clearStatisticsContext, raw: statisticsRaw } = useStatisticsContext()
+  const txReadRequest = useRef(0)
+  const txBucket = statisticsRaw || activeLedgerId || '__none__'
   const [transactions, setTransactions] = usePageCache<ReadTransaction[]>(
     `transactions:${txBucket}:rows`,
     []
@@ -389,6 +393,10 @@ export function TransactionsPage() {
   const [txFilterApplied, setTxFilterApplied] = useState<TxFilter>(defaultTxFilter)
   const [txFilterDraft, setTxFilterDraft] = useState<TxFilter>(defaultTxFilter)
   const [txFilterOpen, setTxFilterOpen] = useState(false)
+  const txQueryKey = JSON.stringify([activeLedgerId, statisticsRaw, listQuery, txFilterApplied, txPage, txPageSize])
+  const txQueryKeyRef = useRef(txQueryKey)
+  txQueryKeyRef.current = txQueryKey
+
   // filter dialog 内嵌的 category / tag picker。这两个 dialog 跟 filter dialog
   // 同级渲染(filter dialog z-index 之外),避免嵌套 dialog 导致 portal 抖动。
   const [txFilterCategoryPickerOpen, setTxFilterCategoryPickerOpen] = useState(false)
@@ -605,6 +613,7 @@ export function TransactionsPage() {
     // overview 的 fetch 已由 OverviewPage 自持。
 
     if (section === 'transactions') {
+      const request = ++txReadRequest.current
       // 交易是账本内的,按 ledger 过滤;账户/分类/标签都是 **用户全局**
       // (Flutter schema:Categories/Accounts/Tags 表都没 ledger_id 字段,一套
       // 跨所有账本共享)—— 拉字典不要按 ledger 过滤,避免多账本下漏数据。
@@ -640,6 +649,7 @@ export function TransactionsPage() {
           amountMax: Number.isFinite(maxNum) && txFilterApplied.amountMax ? maxNum : undefined,
           dateFrom: dateFromIso,
           dateTo: dateToIso,
+          ...(statisticsContext ? statisticsQuery(statisticsContext) : {}),
           limit: txPageSize,
           offset: (txPage - 1) * txPageSize
         }),
@@ -647,6 +657,7 @@ export function TransactionsPage() {
         fetchWorkspaceCategories(token, { userId: txUserId, limit: 500 }),
         fetchWorkspaceTags(token, { userId: txUserId, limit: 500 })
       ])
+      if (request !== txReadRequest.current || txQueryKey !== txQueryKeyRef.current) return
       setTransactions(txPageResult.items)
       setTxTotal(txPageResult.total)
       if (txPageResult.total > 0 && txPage > 1 && txPageResult.items.length === 0) {
@@ -808,31 +819,33 @@ export function TransactionsPage() {
     if (typeof window === 'undefined') return
     txFilterRestoreInProgressRef.current = true
     const stored = parseStoredTxFilter(window.localStorage.getItem(txFilterPersistKey))
-    const nextFilter = stored ?? defaultTxFilter()
+    const nextFilter = statisticsContext ? defaultTxFilter() : stored ?? defaultTxFilter()
     // URL `?q=xxx` 优先 —— 从 CmdK / Overview TopCategory 跳过来时 URL 带的
     // 搜索词必须落到输入框,不能被 localStorage 里的旧值盖掉。
     const urlQ = searchParams.get('q')
-    const effectiveQ = urlQ && urlQ.trim().length > 0 ? urlQ : nextFilter.q
+    const effectiveQ = statisticsContext ? '' : urlQ && urlQ.trim().length > 0 ? urlQ : nextFilter.q
     setListQuery(effectiveQ)
     setTxFilterApplied({ ...nextFilter, q: effectiveQ })
     setTxFilterDraft({ ...nextFilter, q: effectiveQ })
     setTxPage(1)
+    setTransactions([])
+    setTxTotal(0)
     queueMicrotask(() => {
       txFilterRestoreInProgressRef.current = false
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [route.section, txFilterPersistKey])
+  }, [route.section, txFilterPersistKey, statisticsRaw])
 
   useEffect(() => {
     if (route.section !== 'transactions') return
     if (typeof window === 'undefined') return
-    if (txFilterRestoreInProgressRef.current) return
+    if (txFilterRestoreInProgressRef.current || statisticsContext) return
     const payload: TxFilter = {
       ...txFilterApplied,
       q: listQuery,
     }
     window.localStorage.setItem(txFilterPersistKey, JSON.stringify(payload))
-  }, [route.section, txFilterPersistKey, listQuery, txFilterApplied])
+  }, [route.section, txFilterPersistKey, listQuery, txFilterApplied, statisticsContext])
 
   // PWA shortcut / share target / file handler 触发的 URL action 消费:
   //   action=quick-add  → 自动弹「新建交易」对话框,且若 pwa-intake 单例里
@@ -930,7 +943,7 @@ export function TransactionsPage() {
     isAdminUser,
     activeLedgerId,
     txPage,
-    txPageSize
+    txPageSize, statisticsRaw
   ])
 
   useEffect(() => {
@@ -1610,6 +1623,11 @@ export function TransactionsPage() {
                   左组 = 搜索输入 + 筛选;右组 = 导出 / 新建,
                   ml-auto 套在右组上(而不是单按钮),即便其中一个 button 隐藏
                   另一个仍会贴右,不会跟左组贴在一起。 */}
+              {statisticsContext && <div className="mb-3 flex flex-wrap items-center gap-2 rounded-xl border border-primary/30 bg-primary/5 p-3 text-xs">
+                <p className="min-w-0 flex-1 text-muted-foreground">{statisticsRangeLabel(statisticsContext)} · {statisticsContext.categoryGroup} · {t(`enum.txType.${statisticsContext.txType}`)} · {t('statistics.basis')}</p>
+                <Button size="sm" variant="outline" onClick={() => _navigate(statisticsLink(statisticsContext, '/app/attachments'))}>{t('statistics.attachments')}</Button>
+                <Button size="sm" variant="ghost" onClick={clearStatisticsContext}>{t('statistics.clear')}</Button>
+              </div>}
               <div className="flex flex-wrap items-center gap-2">
                 <div className="flex items-center gap-2">
                   <Input
@@ -1618,7 +1636,7 @@ export function TransactionsPage() {
                     value={listQuery}
                     onChange={(event) => setListQuery(event.target.value)}
                   />
-                  {showTxFilter ? (
+                  {showTxFilter && !statisticsContext ? (
                     <div className="relative">
                       <Tooltip content={t('shell.filter.title')}>
                         <Button
@@ -1693,6 +1711,7 @@ export function TransactionsPage() {
                             amountMax: filter.amountMax
                               ? Number(filter.amountMax)
                               : undefined,
+                            ...(statisticsContext ? statisticsQuery(statisticsContext) : {}),
                             lang: locale,
                           })
                           toast.success(t('export.csv.success'))

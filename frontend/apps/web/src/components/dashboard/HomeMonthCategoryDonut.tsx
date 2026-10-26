@@ -9,6 +9,7 @@ interface Props {
   ranks: WorkspaceAnalyticsCategoryRank[]
   currency?: string
   title?: string
+  onSelectCategory?: (name: string) => void
 }
 
 /** 固定展示金额前五，其余合并；保留原行供展开，不用名称判断合并项。 */
@@ -30,7 +31,7 @@ export function prepareCategoryDonut(ranks: WorkspaceAnalyticsCategoryRank[]) {
  * "其他"。参考 `AccountsPanel.AssetsCompositionMini`，同样风格避免引入 recharts
  * 分段饼图的多余依赖。
  */
-export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title }: Props) {
+export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title, onSelectCategory }: Props) {
   const t = useT()
   const otherLabel = t('home.monthDonut.other')
   const { slices, rest, total, categoryCount } = useMemo(() => prepareCategoryDonut(ranks), [ranks])
@@ -112,9 +113,9 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title }: Props
                       style={{ background: color }}
                       aria-hidden
                     />
-                    <span className="flex-1 truncate" title={s.isOther ? otherLabel : s.name}>
+                    <button type="button" disabled={s.isOther || !onSelectCategory} onClick={() => onSelectCategory?.(s.name)} className="flex-1 truncate text-left enabled:hover:underline enabled:focus-visible:ring-2 enabled:focus-visible:ring-ring" title={s.isOther ? otherLabel : s.name}>
                       {s.isOther ? t('home.monthDonut.otherCount').replace('{count}', String(rest.length)) : s.name || t('home.monthDonut.uncategorized')}
-                    </span>
+                    </button>
                     <span className="text-muted-foreground font-mono tabular-nums">
                       {pct.toFixed(1)}%
                     </span>
@@ -137,7 +138,7 @@ export function HomeMonthCategoryDonut({ ranks, currency = 'CNY', title }: Props
           <p className="mt-2 text-[11px] text-muted-foreground">{t('home.monthDonut.otherHint')}</p>
           <ul className="mt-3 space-y-2">
             {rest.map((row, index) => <li key={index} className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-xs">
-              <span className="min-w-0 flex-1 break-words">{row.category_name || t('home.monthDonut.uncategorized')}</span>
+              <button type="button" disabled={!onSelectCategory} onClick={() => onSelectCategory?.(row.category_name)} className="min-w-0 flex-1 break-words text-left enabled:hover:underline enabled:focus-visible:ring-2 enabled:focus-visible:ring-ring">{row.category_name || t('home.monthDonut.uncategorized')}</button>
               <span className="text-muted-foreground">{t('home.monthDonut.txCount').replace('{count}', String(row.tx_count))}</span>
               <span className="font-mono text-muted-foreground">{(row.total / total * 100).toFixed(1)}%</span>
               <Amount value={row.total} currency={currency} size="xs" className="w-20 text-right" />

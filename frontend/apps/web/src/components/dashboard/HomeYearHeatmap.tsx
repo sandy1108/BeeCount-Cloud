@@ -1,3 +1,4 @@
+import { isFutureBucket } from '../../lib/skiSeason'
 import { useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, useT } from '@beecount/ui'
 
@@ -61,6 +62,7 @@ export function HomeYearHeatmap({ yearSeries, currency = 'CNY', buckets, title }
              代价是卡片高度翻倍 —— 但首页下方本来就空着,换个立体感反而好看。 */}
         <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
           {data.rows.map((row) => {
+            const future = Boolean(buckets) && isFutureBucket(row.bucket)
             const pct = data.maxExpense > 0 ? row.expense / data.maxExpense : 0
             const bg =
               pct === 0
@@ -87,6 +89,7 @@ export function HomeYearHeatmap({ yearSeries, currency = 'CNY', buckets, title }
                 >
                   {row.monthLabel}
                 </span>
+                {future && <span className="text-[10px] text-muted-foreground">{t(row.expense || row.income ? 'statistics.futureRecorded' : 'statistics.future')}</span>}
                 {row.expense > 0 ? (
                   <span
                     className={`truncate font-mono text-[11px] leading-tight tabular-nums ${

@@ -373,6 +373,7 @@ export type WorkspaceAnalyticsSeriesItem = {
 }
 
 export type WorkspaceAnalyticsCategoryRank = {
+  category_group?: string | null
   category_name: string
   total: number
   tx_count: number
@@ -400,6 +401,7 @@ export type WorkspaceAnalyticsAnomalyMonth = {
 }
 
 export type WorkspaceAnalyticsRange = {
+  end_at_exclusive?: string | null
   scope: AnalyticsScope
   metric: AnalyticsMetric
   period: string | null

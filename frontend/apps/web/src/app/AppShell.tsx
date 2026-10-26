@@ -33,6 +33,8 @@ import { AppLayout } from '../layout/AppLayout'
 import { jwtUserId } from '../state/jwt'
 import { parseRoute, routePath } from '../state/router'
 import { AppHeader } from './AppHeader'
+import { AppBootstrapStatus } from './AppBootstrapStatus'
+import { loadAppBootstrap } from '../lib/appBootstrap'
 
 interface Props {
   token: string
@@ -62,6 +64,10 @@ export function AppShell({ token, onLogout }: Props) {
   const [isAdminResolved, setIsAdminResolved] = useState(false)
   const [logsOpen, setLogsOpen] = useState(false)
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [bootstrapAttempt, setBootstrapAttempt] = useState(0)
+  const [bootstrap, setBootstrap] = useState<{ token: string; status: 'loading' | 'ready' | 'error' }>({
+    token, status: 'loading',
+  })
   const sessionUserId = useMemo(() => jwtUserId(token), [token])
 
   const activeLedgerStorageKey = useMemo(
@@ -123,14 +129,25 @@ export function AppShell({ token, onLogout }: Props) {
   useEffect(() => {
     if (!token) return
     let cancelled = false
+    setBootstrap({ token, status: 'loading' })
     const run = async () => {
       try {
-        await Promise.all([refreshLedgers(), refreshProfile()])
+        const { profile, ledgers: rows } = await loadAppBootstrap(token)
+        // 切换账号或卸载后，旧请求不得安装资料/账本或打开业务页面。
+        if (cancelled) return
+        setLedgers(rows)
+        reconcileActiveLedger(rows)
+        setProfileMe(profile)
+        applyIncomeColorScheme(profile.income_is_red ?? true)
+        applyServerPrimaryColor(profile.theme_primary_color)
+        setBootstrap({ token, status: 'ready' })
       } catch (err) {
         if (cancelled) return
         if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
           onLogout()
+          return
         }
+        setBootstrap({ token, status: 'error' })
         // eslint-disable-next-line no-console
         console.warn('[AppShell] initial load error', err)
       }
@@ -140,11 +157,12 @@ export function AppShell({ token, onLogout }: Props) {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token])
+  }, [token, bootstrapAttempt])
 
   useEffect(() => {
     if (!token) return
     let cancelled = false
+    setIsAdminResolved(false)
     const run = async () => {
       try {
         await fetchAdminUsers(token, { limit: 1 })
@@ -165,7 +183,7 @@ export function AppShell({ token, onLogout }: Props) {
     return () => {
       cancelled = true
     }
-  }, [token])
+  }, [token, bootstrapAttempt])
 
   useEffect(() => {
     if (!isAdminResolved) return
@@ -185,6 +203,13 @@ export function AppShell({ token, onLogout }: Props) {
     },
     [navigate]
   )
+
+  // token 变更到 effect 执行前也保持门禁，不能短暂展示旧账号的已加载界面。
+  const bootstrapStatus = bootstrap.token === token ? bootstrap.status : 'loading'
+  if (bootstrapStatus !== 'ready') {
+    return <AppBootstrapStatus status={bootstrapStatus}
+      onRetry={() => setBootstrapAttempt((attempt) => attempt + 1)} onLogout={onLogout} />
+  }
 
   return (
     <AuthProvider

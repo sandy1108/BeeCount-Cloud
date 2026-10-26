@@ -707,6 +707,7 @@ class WorkspaceAnalyticsSeriesItemOut(BaseModel):
 
 
 class WorkspaceAnalyticsCategoryRankOut(BaseModel):
+    category_group: str | None = None
     category_name: str
     total: float
     tx_count: int
@@ -742,6 +743,7 @@ class WorkspaceAnalyticsAnomalyMonthOut(BaseModel):
 
 
 class WorkspaceAnalyticsRangeOut(BaseModel):
+    end_at_exclusive: datetime | None = None
     scope: AnalyticsScope
     metric: AnalyticsMetric
     period: str | None

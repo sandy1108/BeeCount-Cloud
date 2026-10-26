@@ -16,6 +16,7 @@ from ...deps import get_current_user
 from ...models import AttachmentFile, ReadTxProjection, User
 from ._shared import _READ_SCOPE_DEP, _require_ledger, _to_utc, router
 from .category_filter import category_filter
+from .statistics_filter import statistics_filters
 
 
 class GalleryAttachmentOut(BaseModel):
@@ -55,7 +56,7 @@ def _references(db: Session, ledger_id: str):
         key.label("file_key"), cloud_id.label("cloud_file_id"), ref.label("ref"),
         field("originalName").label("original_name"), field("fileName").label("file_name"),
         tx.sync_id, tx.happened_at, tx.note, tx.category_name, tx.category_sync_id,
-        tx.amount, tx.tx_type, tx.currency_code, tx.native_amount, tx.account_name,
+        tx.exclude_from_stats, tx.amount, tx.tx_type, tx.currency_code, tx.native_amount, tx.account_name,
     ).select_from(tx).join(entries, true()).where(
         tx.ledger_id == ledger_id, field("fileName").is_not(None),
     ).subquery()
@@ -66,6 +67,9 @@ def list_gallery_attachments(
     ledger_id: str = Query(min_length=1),
     q: str | None = Query(default=None, max_length=200),
     category_sync_id: str | None = None,
+    category_group: str | None = None,
+    statistics_only: bool = False,
+    tx_type: str | None = None,
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     limit: int = Query(default=40, ge=1, le=100),
@@ -76,7 +80,9 @@ def list_gallery_attachments(
 ) -> GalleryAttachmentPageOut:
     ledger, _ = _require_ledger(db, user_id=current_user.id, ledger_external_id=ledger_id, is_admin=False)
     refs = _references(db, ledger.id)
-    query = select(refs)
+    query = select(refs).where(*statistics_filters(
+        db, category_group=category_group, statistics_only=statistics_only, tx_type=tx_type, columns=refs.c,
+    ))
     if date_from is not None:
         query = query.where(refs.c.happened_at >= date_from)
     if date_to is not None:
@@ -104,8 +110,10 @@ def list_gallery_attachments(
         return GalleryAttachmentPageOut(items=[], total=total, transaction_total=transaction_total,
                                         limit=limit, offset=offset)
     # 同页文件的全部关联交易，一次查询；筛选只控制入选文件和分组日期。
-    rows = db.execute(select(refs).where(refs.c.file_key.in_([p.file_key for p in page])).order_by(
-        refs.c.happened_at.desc(), refs.c.sync_id,
+    # 统计下钻只展示命中范围内的关联，防止共享附件带出其它雪季/类型。
+    selected_refs = matched if statistics_only else refs
+    rows = db.execute(select(selected_refs).where(selected_refs.c.file_key.in_([p.file_key for p in page])).order_by(
+        selected_refs.c.happened_at.desc(), selected_refs.c.sync_id,
     )).mappings().all()
     cloud_ids = {row["cloud_file_id"] for row in rows if row["cloud_file_id"]}
     stored = {f.id: f for f in db.scalars(select(AttachmentFile).where(

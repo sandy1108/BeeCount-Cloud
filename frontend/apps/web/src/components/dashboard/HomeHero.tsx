@@ -115,7 +115,7 @@ export function HomeHero({
   const scopeLabel = skiMode && scope === 'year' ? seasonLabel(selectedSeason, t('ski.suffix')) : t(`home.scope.${scope}`)
   const scopeBalanceHint = skiMode && scope === 'year' ? `${scopeLabel} · ${t('ski.balance')}` : t(`home.scope.${scope}.hint`)
   const mainHint = expenseFocus ? t('home.hero.expense').replace('{scope}', scopeLabel) : scopeBalanceHint
-  const seasonRange = skiMode && scope === 'year' ? `${selectedSeason}-10-01 ~ ${selectedSeason + 1}-04-30` : null
+  const seasonRange = skiMode && scope === 'year' ? `${selectedSeason}-05-01 ~ ${selectedSeason + 1}-04-30` : null
   const monthRangeLabel = scope === 'month' ? periodRangeText(ledgerMonthStartDay) : null
 
   const income = activeSummary?.income_total ?? 0

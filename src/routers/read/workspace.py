@@ -15,6 +15,7 @@ from sqlalchemy import false as sa_false
 from ._shared import *  # noqa: F401,F403 — imports + helpers + router
 from ...models import ExchangeRateCache, UserExchangeRateProjection
 from .category_filter import category_filter
+from .statistics_filter import statistics_filters
 
 # ---------------------------------------------------------------------------
 # 净值历史 — 响应 schema
@@ -41,6 +42,8 @@ def list_workspace_transactions(
     tx_sync_id: str | None = Query(default=None, description="按 tx 自身 syncId 精确过滤(用于 admin/integrity 跳到具体交易)"),
     tag_sync_id: str | None = Query(default=None, description="按 tag syncId 精确过滤,不走模糊搜索"),
     category_sync_id: str | None = Query(default=None, description="按 category syncId 精确过滤"),
+    category_group: str | None = Query(default=None),
+    statistics_only: bool = Query(default=False),
     account_sync_id: str | None = Query(default=None, description="按 account syncId 精确过滤(含 from/to)"),
     amount_min: float | None = Query(default=None, description="金额下限(含)。按 abs(amount) 比较以兼容 expense 负值"),
     amount_max: float | None = Query(default=None, description="金额上限(含)"),
@@ -75,6 +78,7 @@ def list_workspace_transactions(
 
     # 组装 projection query:filter + sort + paginate 全交给 SQL + index
     query = select(ReadTxProjection).where(ReadTxProjection.ledger_id.in_(ledger_internal_ids))
+    query = query.where(*statistics_filters(db, category_group=category_group, statistics_only=statistics_only))
     if tx_type:
         query = query.where(ReadTxProjection.tx_type == tx_type)
     if account_name:
@@ -293,6 +297,8 @@ def export_workspace_transactions_csv(
     ),
     tag_sync_id: str | None = Query(default=None),
     category_sync_id: str | None = Query(default=None),
+    category_group: str | None = Query(default=None),
+    statistics_only: bool = Query(default=False),
     account_sync_id: str | None = Query(default=None),
     amount_min: float | None = Query(default=None),
     amount_max: float | None = Query(default=None),
@@ -383,6 +389,7 @@ def export_workspace_transactions_csv(
         else:
             query = query.where(false_literal())
     else:
+        query = query.where(*statistics_filters(db, category_group=category_group, statistics_only=statistics_only))
         if tx_type:
             query = query.where(ReadTxProjection.tx_type == tx_type)
         if account_name:
@@ -979,6 +986,95 @@ def workspace_ledger_counts(
     )
 
 
+class CategoryStatisticsAmountOut(BaseModel):
+    amount: float
+    count: int
+
+
+class CategoryStatisticsMonthOut(CategoryStatisticsAmountOut):
+    bucket: str
+
+
+class CategoryStatisticsNamedOut(CategoryStatisticsAmountOut):
+    name: str
+    color: str | None = None
+
+
+class CategoryStatisticsOut(BaseModel):
+    count: int
+    total: float
+    avg: float
+    max: dict[str, Any]
+    monthly: list[CategoryStatisticsMonthOut]
+    topAccounts: list[CategoryStatisticsNamedOut]
+    topTags: list[CategoryStatisticsNamedOut]
+    peak: dict[str, Any] | None
+
+
+@router.get("/workspace/category-statistics", response_model=CategoryStatisticsOut)
+def category_statistics(
+    ledger_id: str | None = Query(default=None),
+    category_sync_id: str | None = Query(default=None),
+    category_group: str | None = Query(default=None),
+    tx_type: str | None = Query(default=None),
+    statistics_only: bool = Query(default=False),
+    date_from: datetime | None = Query(default=None),
+    date_to: datetime | None = Query(default=None),
+    tz_offset_minutes: int = Query(default=0, ge=-720, le=840),
+    natural_month: bool = Query(default=False),
+    _scopes: set[str] = Depends(_READ_SCOPE_DEP),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> CategoryStatisticsOut:
+    """完整分类汇总，无分页截断；权限先限定账本，再应用和列表相同的过滤。"""
+    from decimal import Decimal
+
+    if category_group is None and not category_sync_id:
+        raise HTTPException(status_code=400, detail="Category selector required")
+    # 管理员身份也不绕过账本成员权限，与当前读取层隔离规则一致。
+    ledgers = _visible_workspace_ledgers(db, current_user=current_user, is_admin=False,
+                                         ledger_id=ledger_id, user_id=None)
+    query = select(ReadTxProjection).where(
+        ReadTxProjection.ledger_id.in_([l.id for l in ledgers]),
+        *statistics_filters(db, category_group=category_group, statistics_only=statistics_only,
+                            tx_type=tx_type, date_from=date_from, date_to=date_to),
+    )
+    if category_sync_id:
+        query = query.where(category_filter(db, category_sync_id, current_user.id))
+    start_day = 1 if natural_month or len(ledgers) != 1 else (ledgers[0].month_start_day or 1)
+    monthly, accounts, tags = {}, {}, {}
+    count, total, maximum = 0, Decimal(0), Decimal(0)
+
+    def add(target, key, amount):
+        slot = target.setdefault(key, {"amount": Decimal(0), "count": 0})
+        slot["amount"] += amount
+        slot["count"] += 1
+
+    # 流式遍历完整匹配集，以十进制累加折本位币金额，不把明细传给浏览器聚合。
+    for row in db.scalars(query).yield_per(1000):
+        amount = Decimal(str(row.native_amount if row.native_amount is not None else row.amount))
+        count += 1
+        total += amount
+        maximum = max(maximum, amount)
+        add(monthly, _bucket_key("year", _to_utc(row.happened_at), tz_offset_minutes, start_day), amount)
+        account = row.account_name or row.from_account_name or row.to_account_name
+        if account:
+            add(accounts, account, amount)
+        for tag in set(_tags_list(row.tags_csv)):
+            add(tags, tag, amount)
+    months = [CategoryStatisticsMonthOut(bucket=k, **v) for k, v in sorted(monthly.items())]
+    peak = max(months, key=lambda m: m.amount) if months else None
+    return CategoryStatisticsOut(
+        count=count, total=float(total), avg=float(total / count) if count else 0,
+        max={"amount": float(maximum), "tx": None}, monthly=months,
+        topAccounts=[CategoryStatisticsNamedOut(name=k, **v) for k, v in
+                     sorted(accounts.items(), key=lambda item: (-item[1]["amount"], item[0]))],
+        topTags=[CategoryStatisticsNamedOut(name=k, **v) for k, v in
+                 sorted(tags.items(), key=lambda item: (-item[1]["count"], item[0]))],
+        peak={"bucket": peak.bucket, "amount": peak.amount} if peak else None,
+    )
+
+
 @router.get("/workspace/analytics", response_model=WorkspaceAnalyticsOut)
 def workspace_analytics(
     scope: AnalyticsScope = Query(default="month"),
@@ -1074,8 +1170,8 @@ def workspace_analytics(
                 continue
             category = (cat_name or "").strip() or "Uncategorized"
             category_slot = category_map.setdefault(
-                category, {"income": 0.0, "expense": 0.0, "count": 0.0})
-            category_slot["count"] += 1.0
+                category, {"income": 0.0, "expense": 0.0, "income_count": 0, "expense_count": 0})
+            category_slot[f"{tx_type_val}_count"] += 1
             if tx_type_val == "income":
                 category_slot["income"] += amt
             elif tx_type_val == "expense":
@@ -1101,7 +1197,8 @@ def workspace_analytics(
             WorkspaceAnalyticsCategoryRankOut(
                 category_name=category_name,
                 total=float(values[metric_key]),
-                tx_count=int(values["count"]),
+                tx_count=int(values[f"{metric_key}_count"]),
+                category_group=category_name,
             )
             for category_name, values in category_map.items()
             if float(values[metric_key]) > 0
@@ -1134,6 +1231,7 @@ def workspace_analytics(
             period=normalized_period,
             start_at=start_at,
             end_at=end_at - timedelta(seconds=1) if end_at is not None else None,
+            end_at_exclusive=end_at,
         ),
     )
 
