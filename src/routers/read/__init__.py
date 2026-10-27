@@ -12,7 +12,7 @@ main.py 的 `from .routers import read` + `app.include_router(read.router, ...)`
 改某条具体端点 → 对应子模块;改共享查询 helper / 字段映射 → _shared.py。
 """
 # 导入子模块触发 @router 装饰器注册。
-from . import attachment_gallery, ledgers, month_statistics, rates, summary, workspace  # noqa: E402,F401
+from . import attachment_gallery, ledgers, month_statistics, season_comparison, rates, summary, workspace  # noqa: E402,F401
 from ._shared import router  # noqa: F401
 
 __all__ = ['router']

@@ -17,6 +17,7 @@ import {
   dispatchOpenDetailTag,
 } from '../../lib/txDialogEvents'
 import { seasonLabel, seasonMonths, type DashboardScope } from '../../lib/skiSeason'
+import { SeasonComparisonPanel } from '../dashboard/SeasonComparisonPanel'
 import { HomeHero } from '../dashboard/HomeHero'
 import { HomeHabitStats } from '../dashboard/HomeHabitStats'
 import { HomeYearHeatmap } from '../dashboard/HomeYearHeatmap'
@@ -125,6 +126,7 @@ export function OverviewSection({
 
       {statisticsScopeLabel && <p className="text-xs text-muted-foreground">{statisticsScopeLabel} · {t('statistics.basis')}</p>}
       {skiMode && <p className="text-xs text-muted-foreground">{t('ski.scopeHint')}</p>}
+      {skiMode && selectedScope === 'year' && <SeasonComparisonPanel key={seasonYear} season={seasonYear} firstTxAt={ledgerCounts?.first_tx_at} />}
       <HomeHabitStats
         statisticsFocus={statisticsFocus}
         monthSummary={currentMonthSummary || undefined}

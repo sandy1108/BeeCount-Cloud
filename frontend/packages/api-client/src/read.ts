@@ -475,3 +475,22 @@ export async function fetchCategoryStatistics(token: string, options: {
   }
   return authedGet<CategoryStatistics>(`/read/workspace/category-statistics?${query}`, token)
 }
+
+export type SeasonComparisonSide = {
+  range: { year: number; start_at: string; end_at_exclusive: string; start_date: string; end_date: string | null
+    empty_period: boolean; leap_adjusted: boolean; not_ended: boolean; includes_today: boolean }
+  summary: MonthStatistics['summary']
+  monthly: (MonthStatistics['daily'][number] & { partial: boolean })[]
+  expenseCategories: WorkspaceAnalyticsCategoryRank[]
+  incomeCategories: WorkspaceAnalyticsCategoryRank[]
+}
+export type SeasonComparison = { selected: SeasonComparisonSide; comparison: SeasonComparisonSide }
+export async function fetchSeasonComparison(token: string, options: {
+  ledgerId: string; season: number; compareSeason: number; mode: 'same' | 'full'; cutoff?: string; tzOffsetMinutes: number
+}): Promise<SeasonComparison> {
+  const query = new URLSearchParams()
+  for (const [key,value] of Object.entries(options)) {
+    if (value !== undefined) query.set(key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`), String(value))
+  }
+  return authedGet<SeasonComparison>(`/read/workspace/season-comparison?${query}`, token)
+}
