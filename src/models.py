@@ -825,3 +825,16 @@ class ImportSourceRecord(Base):
         UniqueConstraint("ledger_id", "file_hash", "row_number", "transaction_sync_id", name="uq_import_source_link"),
         Index("ix_import_source_fingerprint", "ledger_id", "fingerprint"),
     )
+
+
+class TransactionRepayment(Base):
+    """服务端独立关联，不进入旧客户端会覆盖的交易payload。单收入只能抵扣一次。"""
+
+    __tablename__ = "transaction_repayments"
+    ledger_id: Mapped[str] = mapped_column(ForeignKey("ledgers.id", ondelete="CASCADE"), primary_key=True)
+    income_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    expense_id: Mapped[str] = mapped_column(String(128), index=True)
+    tz_offset_minutes: Mapped[int] = mapped_column(Integer)
+    note: Mapped[str] = mapped_column(String(500), default="")
+    created_by_user_id: Mapped[str] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

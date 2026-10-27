@@ -187,6 +187,7 @@ def upsert_tx(
     user_id: str,
     source_change_id: int,
     payload: dict[str, Any],
+    _settlement_validated: bool = False,
 ) -> None:
     payload = normalize_transaction_accounts(payload)
     sync_id = _as_str(payload.get("syncId"))
@@ -285,6 +286,9 @@ def upsert_tx(
                 db, user_id=user_id, name=values[name_key]
             )
 
+    if not _settlement_validated:
+        from .services.settlements import guard_tx
+        guard_tx(db, ledger_id, sync_id, values)
     _upsert(db, ReadTxProjection, ("ledger_id", "sync_id"), values)
 
     # 新行已落地,对 prev - new 的 fileId 查还有无引用 → GC。
@@ -486,6 +490,8 @@ def delete_entity(
 
 
 def delete_tx(db: Session, *, ledger_id: str, sync_id: str) -> None:
+    from .services.settlements import guard_tx
+    guard_tx(db, ledger_id, sync_id, None)
     delete_entity(db, ReadTxProjection, ledger_id=ledger_id, sync_id=sync_id)
 
 
@@ -666,9 +672,12 @@ def rename_cascade_tag(
 # 整表重建:回填 / 恢复备份                                                     #
 # --------------------------------------------------------------------------- #
 
-def _truncate_ledger(db: Session, ledger_id: str) -> None:
+def _truncate_ledger(db: Session, ledger_id: str, *, _settlement_validated: bool = False) -> None:
     """清掉该 ledger 的 ledger-scoped projection。user-global(account/
     category/tag)是 per-user 表,不按 ledger 清,**不在此处处理**。"""
+    if not _settlement_validated:
+        from .services.settlements import guard_snapshot
+        guard_snapshot(db, ledger_id, {})
     for model in (ReadTxProjection, ReadBudgetProjection):
         db.execute(delete(model).where(model.ledger_id == ledger_id))
 
@@ -687,7 +696,19 @@ def rebuild_from_snapshot(
 
     用于:alembic 回填、admin restore_backup、脏数据救急脚本。
     """
-    _truncate_ledger(db, ledger_id)
+    # 整批验证必须在清表之前完成，避免旧快照让关联悬空。
+    from .services.settlements import guard_snapshot
+    values = {}
+    for item in snapshot.get("items") or []:
+        if isinstance(item, dict) and item.get("syncId"):
+            values[str(item["syncId"])] = {
+                "tx_type": item.get("txType") or item.get("tx_type") or item.get("type") or "expense",
+                "amount": _as_float(item.get("amount")),
+                "currency_code": _as_str(item.get("currencyCode")),
+                "happened_at": _parse_happened_at(item.get("happenedAt") or item.get("happened_at")),
+            }
+    guard_snapshot(db, ledger_id, values)
+    _truncate_ledger(db, ledger_id, _settlement_validated=True)
 
     for item in snapshot.get("items") or []:
         if isinstance(item, dict):
@@ -697,6 +718,7 @@ def rebuild_from_snapshot(
                 user_id=user_id,
                 source_change_id=source_change_id,
                 payload=item,
+                _settlement_validated=True,
             )
     for item in snapshot.get("accounts") or []:
         if isinstance(item, dict):

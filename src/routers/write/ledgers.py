@@ -198,6 +198,9 @@ async def update_ledger_meta(
         if "currency" in payload:
             new_currency = payload["currency"]
             next_snapshot["currency"] = new_currency
+            from ...services.settlements import pin_original_currencies
+            if new_currency != ledger.currency:
+                pin_original_currencies(db, ledger)
             ledger.currency = new_currency
             # 全量重算折算快照:NULL currencyCode 的 item 语义是「旧本位币」,
             # 显式落旧币种后按新本位币折算;缺汇率退化 =amount(1:1,L11 可捞)。

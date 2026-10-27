@@ -138,8 +138,16 @@ async def delete_tx_batch(
 
     for tx_id in unique_ids:
         try:
+            from ...services.settlements import guard_tx
+            guard_tx(db, ledger.id, tx_id, None)
             snapshot = delete_transaction(snapshot, tx_id, delete_payload)
             deleted_ids.append(tx_id)
+        except HTTPException as exc:
+            if exc.status_code != 409:
+                raise
+            detail = exc.detail
+            message = detail.get("message") if isinstance(detail, dict) else str(detail)
+            failed.append(BatchTxFailure(tx_id=tx_id, reason="conflict", message=message))
         except KeyError:
             # _find_by_sync_id 抛 KeyError → tx 不在 snapshot(已删 / ID 错 / 跨 ledger)
             failed.append(

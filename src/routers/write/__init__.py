@@ -35,3 +35,6 @@ router.include_router(budgets.router)
 router.include_router(categories.router)
 router.include_router(tags.router)
 router.include_router(exchange_rate_overrides.router)
+
+from ..settlements import write_router
+router.include_router(write_router)

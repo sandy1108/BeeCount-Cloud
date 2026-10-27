@@ -285,6 +285,10 @@ async def push_changes(
                     change.payload["createdByUserId"] = (
                         existing_creator or current_user.id
                     )
+            if change.action == "delete" and change.entity_type in ("ledger", "ledger_snapshot"):
+                from ...services.settlements import guard_snapshot
+                lock_ledger_for_materialize(db, ledger.id)
+                guard_snapshot(db, ledger.id, {})
             row_change = SyncChange(
                 user_id=ledger.user_id,
                 ledger_id=ledger.id,

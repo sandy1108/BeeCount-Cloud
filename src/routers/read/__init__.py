@@ -16,3 +16,6 @@ from . import attachment_gallery, ledgers, month_statistics, season_comparison, 
 from ._shared import router  # noqa: F401
 
 __all__ = ['router']
+
+from ..settlements import read_router
+router.include_router(read_router)

@@ -594,6 +594,8 @@ def apply_change_to_projection(
             if isinstance(new_name, str) and new_name.strip():
                 ledger_row.name = new_name.strip()
             if isinstance(new_currency, str) and new_currency.strip():
+                from .services.settlements import guard_currency
+                guard_currency(db, ledger_row, new_currency.strip()[:16])
                 ledger_row.currency = new_currency.strip()[:16]
             # bool 是 int 子类,显式排除;key 缺失时不动(partial-update merge 契约)
             if isinstance(new_month_start_day, int) and not isinstance(new_month_start_day, bool):

@@ -938,22 +938,18 @@ def create_backup(
         raise HTTPException(status_code=404, detail="Ledger not found")
     ledger, _ = row
 
-    snapshot = db.scalar(
-        select(SyncChange)
-        .where(
-            SyncChange.ledger_id == ledger.id,
-            SyncChange.entity_type == "ledger_snapshot",
-            SyncChange.action == "upsert",
-        )
-        .order_by(SyncChange.change_id.desc())
-    )
-    if not snapshot:
-        raise HTTPException(status_code=404, detail="No snapshot for ledger")
-
+    # 新架构不再持续写ledger_snapshot；从同一事务的projection生成完整快照。
+    from .. import snapshot_builder
+    from ..services import settlements, settlement_backup
+    settlements.lock(db, ledger)
+    payload = {
+        "content": json.dumps(snapshot_builder.build(db, ledger), ensure_ascii=False),
+        settlement_backup.KEY: settlement_backup.export(db, ledger),
+    }
     backup = BackupSnapshot(
         user_id=current_user.id,
         ledger_id=ledger.id,
-        snapshot_json=json.dumps(snapshot.payload_json, ensure_ascii=False),
+        snapshot_json=json.dumps(payload, ensure_ascii=False),
         note=req.note,
     )
     db.add(backup)
@@ -994,14 +990,18 @@ async def restore_backup(
     if ledger.user_id != current_user.id and not current_user.is_admin:
         raise HTTPException(status_code=404, detail="Ledger not found")
 
+    from ..services import settlements, settlement_backup
+    settlements.lock(db, ledger)
     payload = json.loads(backup.snapshot_json)
+    # 关系扩展只属于Cloud备份，不向旧手机推送它不认识的实体/协议字段。
+    sync_payload = {k: v for k, v in payload.items() if k != settlement_backup.KEY}
     sync_row = SyncChange(
         user_id=current_user.id,
         ledger_id=backup.ledger_id,
         entity_type="ledger_snapshot",
         entity_sync_id="ledger_snapshot_restore",
         action="upsert",
-        payload_json=payload,
+        payload_json=sync_payload,
         updated_at=datetime.now(timezone.utc),
         updated_by_device_id=req.device_id,
         updated_by_user_id=current_user.id,
@@ -1027,6 +1027,11 @@ async def restore_backup(
             snapshot=restored_snapshot,
             source_change_id=sync_row.change_id,
         )
+    if restored_snapshot is None and (settlement_backup.KEY in payload or settlements.links(db, ledger.id)):
+        settlements.conflict("备份缺少有效交易快照，不能恢复关联回款")
+    if restored_snapshot is not None:
+        settlement_backup.restore(db, ledger, payload, current_user.id,
+            snapshot_currency=restored_snapshot.get("currency") or ledger.currency)
     db.add(
         AuditLog(
             user_id=current_user.id,
