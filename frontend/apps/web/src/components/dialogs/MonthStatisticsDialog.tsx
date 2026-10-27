@@ -1,8 +1,9 @@
+import { dispatchOpenDetailTx } from '../../lib/txDialogEvents'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { Button, Dialog, DialogContent, DialogHeader, DialogTitle, useT } from '@beecount/ui'
 import { Amount, TransactionList } from '@beecount/web-features'
-import { downloadWorkspaceTransactionsCsv, fetchMonthStatistics, fetchWorkspaceTransactions, type MonthStatistics, type WorkspaceTransactionPage } from '@beecount/api-client'
+import { downloadWorkspaceTransactionsCsv, fetchMonthStatistics, fetchWorkspaceTransactions, type MonthStatistics, type WorkspaceTransaction, type WorkspaceTransactionPage } from '@beecount/api-client'
 import { useAuth } from '../../context/AuthContext'
 import { useLedgers } from '../../context/LedgersContext'
 import { useSyncRefresh } from '../../context/SyncSocketContext'
@@ -98,7 +99,7 @@ export function MonthStatisticsDialog({ onReturnToParent }: { onReturnToParent: 
         </div>
         {!selection || !context ? <p role="alert">{t('month.invalid')}</p> : failed ? <div role="alert" className="flex flex-wrap items-center gap-3 text-sm text-destructive"><span>{t('statistics.failed')}</span><Button size="sm" variant="outline" onClick={() => setRefresh(value => value + 1)}>{t('statistics.retry')}</Button></div> : !stats || !current ? <p role="status" className="py-10 text-center text-sm text-muted-foreground">{t('ski.loading')}</p> : <>
           <MonthSummary stats={stats} currency={context.currency} expenseFocus={profileMe?.statistics_focus === 'expense'} />
-          <MonthlyTrendBars data={series} showAll title={t('month.daily')} />
+          <MonthlyTrendBars data={series} showAll title={t('month.daily')} statisticsFocus={profileMe?.statistics_focus} />
           <p className="text-xs text-muted-foreground">{t('statistics.trendHint')}</p>
           {context.categoryGroup === undefined ? <div className="grid gap-4 md:grid-cols-2">
             <HomeMonthCategoryDonut ranks={stats.expenseCategories} currency={context.currency} title={t('ski.categories')} />
@@ -121,7 +122,7 @@ export function MonthStatisticsDialog({ onReturnToParent }: { onReturnToParent: 
           </div>
           {exportState === 'done' && <p role="status" className="text-xs text-muted-foreground">{t('month.exported')}</p>}
           {exportState === 'error' && <p role="alert" className="text-xs text-destructive">{t('month.exportError')}</p>}
-          <TransactionList items={current.transactions.items} variant="compact" onPreviewAttachment={preview} noteDisplayMode={profileMe?.appearance?.note_display_mode ?? 'category'} />
+          <TransactionList onSelect={row => dispatchOpenDetailTx(row as WorkspaceTransaction, context ?? undefined)} items={current.transactions.items} variant="compact" onPreviewAttachment={preview} noteDisplayMode={profileMe?.appearance?.note_display_mode ?? 'category'} />
           <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
             <span>{t('month.page').replace('{page}', String(page + 1)).replace('{pages}', String(Math.max(1, Math.ceil(current.transactions.total / PAGE_SIZE))))} · {current.transactions.total}{t('home.topCat.countUnit')}</span>
             <div className="flex gap-2"><Button size="sm" variant="outline" disabled={!page} onClick={() => setPage({ raw, index: page - 1 })}>{t('month.previousPage')}</Button><Button size="sm" variant="outline" disabled={(page + 1) * PAGE_SIZE >= current.transactions.total} onClick={() => setPage({ raw, index: page + 1 })}>{t('month.nextPage')}</Button></div>

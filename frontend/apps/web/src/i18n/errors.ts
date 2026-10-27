@@ -29,7 +29,7 @@ const ERROR_KEYS: Record<string, string> = {
 type Translator = (key: string, params?: TranslateParams) => string
 
 function resolveApiErrorMessage(err: ApiError, t: Translator): string {
-  if (!err.code) return err.message
+  if (!err.code || err.code === 'SETTLEMENT_CONFLICT') return err.message
   const key = ERROR_KEYS[err.code] || 'error.default'
   if (err.code === 'WRITE_CONFLICT') {
     return t(key, {

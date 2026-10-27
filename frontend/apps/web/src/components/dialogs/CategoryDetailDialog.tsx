@@ -1,3 +1,4 @@
+import { dispatchOpenDetailTx } from '../../lib/txDialogEvents'
 import { isFutureBucket } from '../../lib/skiSeason'
 import { useMemo } from 'react'
 import type {
@@ -295,6 +296,7 @@ export function CategoryDetailDialog({
 
               <TransactionList
                 items={transactions}
+                onSelect={row => dispatchOpenDetailTx(row as WorkspaceTransaction, statisticsContext)}
                 tags={tags}
                 variant="compact"
                 loading={loading}

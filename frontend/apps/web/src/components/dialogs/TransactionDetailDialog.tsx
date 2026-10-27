@@ -1,3 +1,4 @@
+import { SettlementPanel } from './SettlementPanel'
 import { useEffect, useMemo, useState } from 'react'
 import { resolveApiUrl, type AttachmentRef, type WorkspaceTag, type WorkspaceTransaction } from '@beecount/api-client'
 import {
@@ -19,6 +20,7 @@ interface Props {
   tx: WorkspaceTransaction | null
   /** 当前用户对该交易是否有写权限(决定 edit 按钮是否启用) */
   canManage?: boolean
+  tzOffsetMinutes?: number
   /** ledger tags 列表 — 用于按 name 查 color 给 chip 上色,跟 TransactionRow 一致 */
   tags?: WorkspaceTag[]
   onClose: () => void
@@ -39,6 +41,7 @@ interface Props {
 export function TransactionDetailDialog({
   tx,
   canManage = true,
+  tzOffsetMinutes,
   tags,
   onClose,
   onEdit,
@@ -119,6 +122,8 @@ export function TransactionDetailDialog({
                 {formatDateTime(tx.happened_at)}
               </span>
             </div>
+
+            {tx.tx_type !== 'transfer' && <SettlementPanel key={`${tx.ledger_id}:${tx.id}`} tx={tx} tzOffsetMinutes={tzOffsetMinutes} />}
 
             {/* 字段列表 */}
             <div className="flex flex-col divide-y divide-border/40 px-6">

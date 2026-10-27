@@ -23,6 +23,7 @@ import { useAuth } from './AuthContext'
  * 匹配的事件到来时触发。handler 内部 re-render、re-fetch 或静默处理都可以。
  */
 export type SyncEventKind =
+  | 'repayment_change'
   | 'profile_change'
   | 'sync_change'
   | 'backup_restore'

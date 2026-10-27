@@ -50,8 +50,8 @@ export function dispatchOpenEditTx(tx: WorkspaceTransaction) {
   window.dispatchEvent(new CustomEvent(EDIT_TX_EVENT, { detail: tx }))
 }
 
-export function dispatchOpenDetailTx(tx: WorkspaceTransaction) {
-  window.dispatchEvent(new CustomEvent(DETAIL_TX_EVENT, { detail: tx }))
+export function dispatchOpenDetailTx(tx: WorkspaceTransaction, statisticsContext?: StatisticsContext) {
+  window.dispatchEvent(new CustomEvent(DETAIL_TX_EVENT, { detail: { tx, statisticsContext } }))
 }
 
 export function hasEditTxHandler(): boolean {
@@ -83,11 +83,13 @@ export function onOpenEditTx(
 }
 
 export function onOpenDetailTx(
-  handler: (tx: WorkspaceTransaction) => void,
+  handler: (tx: WorkspaceTransaction, statisticsContext?: StatisticsContext) => void,
 ): () => void {
   const wrapped = (e: Event) => {
-    const detail = (e as CustomEvent<WorkspaceTransaction>).detail
-    if (detail) handler(detail)
+    // 公共组件旧事件直接携带tx，继续兼容；统计入口可额外传不可变上下文。
+    const detail = (e as CustomEvent<WorkspaceTransaction | { tx: WorkspaceTransaction; statisticsContext?: StatisticsContext }>).detail
+    if (detail && 'tx' in detail) handler(detail.tx, detail.statisticsContext)
+    else if (detail) handler(detail)
   }
   window.addEventListener(DETAIL_TX_EVENT, wrapped)
   return () => window.removeEventListener(DETAIL_TX_EVENT, wrapped)

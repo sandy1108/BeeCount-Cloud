@@ -150,7 +150,7 @@ export function OverviewSection({
 
       <div className="grid gap-4 lg:grid-cols-2">
         <AssetCompositionDonut accounts={accounts} />
-        <MonthlyTrendBars onMonthClick={onMonthClick} showAll={skiMode} data={analyticsData?.series || []} title={periodTitle ? `${periodTitle} · ${t('ski.trend')}` : undefined} />
+        <MonthlyTrendBars statisticsFocus={statisticsFocus} onMonthClick={onMonthClick} showAll={skiMode} data={analyticsData?.series || []} title={periodTitle ? `${periodTitle} · ${t('ski.trend')}` : undefined} />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

@@ -1855,7 +1855,7 @@ export function TransactionsPage() {
                 }
                 onSelect={(row) => {
                   // 派发全局 detail 事件,弹窗由 GlobalEntityDialogs 渲染
-                  dispatchOpenDetailTx(row as WorkspaceTransaction)
+                  dispatchOpenDetailTx(row as WorkspaceTransaction, statisticsContext ?? undefined)
                 }}
               />
               <BatchDeleteDialog

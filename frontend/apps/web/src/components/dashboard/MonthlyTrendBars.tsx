@@ -1,10 +1,9 @@
 import { isFutureBucket } from '../../lib/skiSeason'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import {
   Bar,
   CartesianGrid,
   ComposedChart,
-  Legend,
   Line,
   ResponsiveContainer,
   Tooltip,
@@ -15,6 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle, useLocale, useT } from '@beec
 
 import { formatCompactTick } from '../../i18n/format'
 import { MonthDrilldownLinks } from './MonthDrilldownLinks'
+import { DEFAULT_TREND_VISIBILITY, toggleTrendSeries, type TrendSeries, type TrendSeriesVisibility } from '../../lib/trendSeriesVisibility'
 
 interface SeriesItem {
   bucket: string
@@ -28,6 +28,7 @@ interface Props {
   data: SeriesItem[]
   title?: string
   showAll?: boolean
+  statisticsFocus?: 'balance' | 'expense'
   onMonthClick?: (month: string) => void
 }
 
@@ -46,16 +47,19 @@ export function prepareTrendSeries(data: SeriesItem[], showAll = false) {
 }
 
 /**
- * 月度收支走势 — 最近 12 期柱图,叠加净额折线,直观看出某个月是赚到了还是
- * 入不敷出。
+ * 收支柱保留原始流水口径；折线随统计视角展示支出或净额。
  *
- * 数据源是后端已经聚合好的 `analyticsData.series`(YYYY-MM bucket),前端只
- * 切片 + 计算 balance(不依赖 server.balance 字段,保险用 income-expense 算)。
+ * 复用服务端聚合的月/日桶；净额缺失时才用收入减支出兜底，不改原始收支。
  */
-export function MonthlyTrendBars({ data, title, showAll = false, onMonthClick }: Props) {
+export function MonthlyTrendBars({ data, title, showAll = false, statisticsFocus = 'balance', onMonthClick }: Props) {
   const t = useT()
   const { locale } = useLocale()
   const chinese = locale.startsWith('zh')
+  // 支出视角使用正的支出金额，不能简单反转净额，否则收入也会被反向混入。
+  const lineMetric = statisticsFocus === 'expense' ? 'expense' : 'balance'
+  // 每张图独立、每次新打开默认只看趋势；不写账号或浏览器持久配置。
+  const [visibility, setVisibility] = useState<TrendSeriesVisibility>(() => ({ ...DEFAULT_TREND_VISIBILITY }))
+  const trendLabel = t(statisticsFocus === 'expense' ? 'home.trendBars.expenseLine' : 'home.trendBars.balanceLine')
 
   const slice = useMemo(() => prepareTrendSeries(data, showAll), [data, showAll])
 
@@ -76,6 +80,7 @@ export function MonthlyTrendBars({ data, title, showAll = false, onMonthClick }:
         <CardTitle className="text-base">{title || t('home.trendBars.title')}</CardTitle>
       </CardHeader>
       <CardContent>
+        <TrendSeriesControls visibility={visibility} onToggle={series => setVisibility(current => toggleTrendSeries(current, series))} trendLabel={trendLabel} />
         {slice.length === 0 ? (
           <div className="flex h-48 items-center justify-center text-xs text-muted-foreground">
             {t('home.trendBars.empty')}
@@ -125,46 +130,58 @@ export function MonthlyTrendBars({ data, title, showAll = false, onMonthClick }:
                     return [fmt(v), label]
                   }) as unknown as never}
                 />
-                <Legend
-                  iconType="circle"
-                  wrapperStyle={{ fontSize: 11 }}
-                  formatter={(v: string) =>
-                    v === 'income'
-                      ? t('home.trendBars.income')
-                      : v === 'expense'
-                        ? t('home.trendBars.expense')
-                        : v === 'balance'
-                          ? t('home.trendBars.balance')
-                          : v
-                  }
-                />
-                {/* income / expense 柱子用 token 跟随用户配色偏好。balance 折线
+                {/* income / expense 柱子用 token 跟随用户配色偏好。趋势折线
                     用 primary 色 — 跟主题色绑定,亮暗模式都看得清。 */}
-                <Bar
+                {visibility.income && <Bar
                   dataKey="income"
                   fill="rgb(var(--income-rgb))"
                   radius={[4, 4, 0, 0]}
-                />
-                <Bar
+                />}
+                {visibility.expense && <Bar
                   dataKey="expense"
                   fill="rgb(var(--expense-rgb))"
                   radius={[4, 4, 0, 0]}
-                />
-                <Line
+                />}
+                {visibility.trend && <Line
                   type="monotone"
-                  dataKey="balance"
+                  dataKey={lineMetric}
+                  name={trendLabel}
                   stroke="hsl(var(--primary))"
                   strokeWidth={2}
                   dot={{ fill: 'hsl(var(--primary))', r: 3 }}
                   activeDot={{ r: 5 }}
-                />
+                />}
               </ComposedChart>
             </ResponsiveContainer>
           </div>
         )}
+        <p className="mt-2 text-xs leading-relaxed text-muted-foreground">{t('home.trendBars.visibilityHint')}</p>
+        {visibility.trend && <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t(statisticsFocus === 'expense' ? 'home.trendBars.expenseHint' : 'home.trendBars.balanceHint')}</p>}
         {showAll && slice.some(row => isFutureBucket(row.bucket)) && <p className="mt-2 text-[11px] text-muted-foreground">* {t('statistics.futureHint')}</p>}
         {onMonthClick && <MonthDrilldownLinks buckets={slice.map(row => row.bucket)} onSelect={onMonthClick} />}
       </CardContent>
     </Card>
   )
+}
+
+/** 多选按钮兼作图例，颜色和图层一致；禁用最后一个选中项，始终保留可读图表。 */
+export function TrendSeriesControls({ visibility, onToggle, trendLabel }: {
+  visibility: TrendSeriesVisibility; onToggle: (series: TrendSeries) => void; trendLabel: string
+}) {
+  const t = useT()
+  const count = Object.values(visibility).filter(Boolean).length
+  const options: Array<{ key: TrendSeries; label: string; color: string }> = [
+    { key: 'expense', label: t('home.trendBars.expense'), color: 'rgb(var(--expense-rgb))' },
+    { key: 'income', label: t('home.trendBars.income'), color: 'rgb(var(--income-rgb))' },
+    { key: 'trend', label: trendLabel, color: 'hsl(var(--primary))' },
+  ]
+  return <div role="group" aria-label={t('home.trendBars.visibility')} className="mb-4 flex flex-wrap gap-2">
+    {options.map(option => <button key={option.key} type="button" aria-pressed={visibility[option.key]}
+      disabled={visibility[option.key] && count === 1} title={t('home.trendBars.visibilityHint')}
+      onClick={() => onToggle(option.key)}
+      className={`inline-flex min-h-9 items-center gap-2 rounded-full border px-3 py-1.5 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed ${visibility[option.key] ? 'border-primary/40 bg-primary/10 font-semibold text-foreground' : 'border-border/70 bg-background text-muted-foreground hover:bg-muted/60'}`}>
+      <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: option.color }} />
+      {option.label}<span aria-hidden="true" className="inline-block w-3 text-center">{visibility[option.key] ? '✓' : ''}</span>
+    </button>)}
+  </div>
 }

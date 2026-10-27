@@ -61,6 +61,7 @@ export function GlobalEntityDialogs() {
 
   // 4 个独立 state — 互不影响,可同时打开(不太可能但理论支持)
   const [tx, setTx] = useState<WorkspaceTransaction | null>(null)
+  const [txOffset, setTxOffset] = useState<number | undefined>()
 
   const [account, setAccount] = useState<WorkspaceAccount | null>(null)
   const [accountScope, setAccountScope] = useState<DetailScope>('current')
@@ -96,7 +97,8 @@ export function GlobalEntityDialogs() {
 
   // 监听 tx detail
   useEffect(() => {
-    return onOpenDetailTx((next) => {
+    return onOpenDetailTx((next, context) => {
+      setTxOffset(context?.ledgerId === next.ledger_id ? context.tzOffsetMinutes : undefined)
       setTx(next)
       // 顺手拉一份 tags 字典,详情弹窗里的 tag chip 要按 color 渲染
       if (tagsDict.length === 0) {
@@ -342,6 +344,7 @@ export function GlobalEntityDialogs() {
     <>
       <TransactionDetailDialog
         tx={tx}
+        tzOffsetMinutes={txOffset}
         tags={tagsDict}
         onClose={() => setTx(null)}
         onEdit={handleEditTx}
